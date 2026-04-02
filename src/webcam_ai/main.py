@@ -1,5 +1,3 @@
-import asyncio
-import base64
 import logging
 import queue
 import threading
