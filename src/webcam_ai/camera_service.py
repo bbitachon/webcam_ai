@@ -52,6 +52,9 @@ class Camera:
         else:
             self.logger.error(f"Unsupported source: {self.source}")
             sys.exit(1)
+        self.logger.info(
+            f"Camera source '{self.source}' initialized successfully with resolution set to {self.resolution}."
+        )
 
     @property
     def resolution(self) -> str:
