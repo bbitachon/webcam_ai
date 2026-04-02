@@ -89,12 +89,12 @@ def main(source, res, port):
     )
 
     # Create and start the camera thread
-    t = threading.Thread(
+    camera_thread = threading.Thread(
         target=camera_thread_worker,
         args=(source, res, frame_queue, stop_event),
         daemon=True,  # Thread dies if the main script stops
     )
-    t.start()
+    camera_thread.start()
 
     # Start the NiceGUI loop
     start_ui(source, res, port, frame_queue, stop_event)
