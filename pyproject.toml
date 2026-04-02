@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webcam-ai"
+version = "0.0.1"
+description = "Simple webcam AI application"
+dependencies = [
+    "pip>=19.2.3",
+    "nicegui==3.8.0",
+    "opencv-python==4.13.0.92"
+]
+authors = [
+    {name = "Bertold Ian Bitachon"},
+]
+requires-python = "==3.11.5"
