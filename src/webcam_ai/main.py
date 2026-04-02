@@ -9,35 +9,9 @@ from fastapi import Response
 from nicegui import app, ui
 
 # Import your class from your other file
-from webcam_ai.camera_service import Camera, StreamState
+from webcam_ai.camera_service import Camera, CameraWorker, StreamState
 
 state = StreamState()
-
-
-# 1. THE PRODUCER (Thread-based)
-def camera_thread_worker(source, resolution, stop_event: threading.Event):
-    """
-    Runs in a background thread.
-    Continuously captures frames and puts them in the queue.
-    """
-    logging.info(f"Starting camera thread: {source} at {resolution}")
-    cam = Camera(source=source, resolution=resolution)
-
-    try:
-        while not stop_event.is_set():
-            ret, frame = cam.read()
-            if ret:
-                # Keep only the latest frame in the queue to prevent lag
-                _, buffer = cv2.imencode(".jpg", frame)  # type: ignore
-                state.latest_jpeg = buffer.tobytes()
-            else:
-                time.sleep(0.1)  # Wait if camera is struggling
-
-            # Tiny sleep to let other threads work
-            time.sleep(0.01)
-    finally:
-        logging.info("Releasing camera...")
-        cam.release()
 
 
 @app.get("/video/stream")
@@ -77,10 +51,14 @@ def main(source, res, port):
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
     )
 
-    # Create and start the camera thread
+    camera = Camera(source=source, resolution=res)
+    camera_worker = CameraWorker(
+        camera=camera, stream_state=state, stop_event=stop_event
+    )
+
+    # Create and start the camera thread (producer)
     camera_thread = threading.Thread(
-        target=camera_thread_worker,
-        args=(source, res, stop_event),
+        target=camera_worker.run,
         daemon=True,  # Thread dies if the main script stops
     )
     camera_thread.start()

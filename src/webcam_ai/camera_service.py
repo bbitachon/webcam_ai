@@ -1,7 +1,11 @@
 import logging
 import sys
+import threading
+import time
 
 import cv2
+
+from webcam_ai.motion_trigger import MotionTrigger
 
 
 class Camera:
@@ -98,3 +102,30 @@ class Camera:
 class StreamState:
     def __init__(self):
         self.latest_jpeg = None
+
+
+class CameraWorker:
+    def __init__(
+        self, camera: Camera, stream_state: StreamState, stop_event: threading.Event
+    ):
+        self.camera = camera
+        self.state = stream_state
+        self.stop_event = stop_event
+        self.logger = logging.getLogger()
+
+    def run(self):
+        try:
+            while not self.stop_event.is_set():
+                ret, frame = self.camera.read()
+                if ret:
+                    # Keep only the latest frame in the queue to prevent lag
+                    _, buffer = cv2.imencode(".jpg", frame)  # type: ignore
+                    self.state.latest_jpeg = buffer.tobytes()
+                else:
+                    time.sleep(0.1)  # Wait if camera is struggling
+
+                # Tiny sleep to let other threads work
+                time.sleep(0.01)
+        finally:
+            logging.info("Releasing camera...")
+            self.camera.release()
