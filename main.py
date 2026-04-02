@@ -1,81 +1,104 @@
-#!/usr/bin/env python3
+import asyncio
 import base64
-import signal
+import logging
+import queue
+import threading
+import time
 
+import click
 import cv2
-import numpy as np
-from fastapi import Response
-from nicegui import Client, app, core, run, ui
+from nicegui import app, ui
 
-# In case you don't have a webcam, this will provide a black placeholder image.
-black_1px = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAA1JREFUGFdjYGBg+A8AAQQBAHAgZQsAAAAASUVORK5CYII="
-placeholder = Response(
-    content=base64.b64decode(black_1px.encode("ascii")), media_type="image/png"
-)
+# Import your class from your other file
+from camera_service import Camera
 
 
-def convert(frame: np.ndarray) -> bytes:
-    """Converts a frame from OpenCV to a JPEG image.
-
-    This is a free function (not in a class or inner-function),
-    to allow run.cpu_bound to pickle it and send it to a separate process.
+# 1. THE PRODUCER (Thread-based)
+def camera_thread_worker(
+    source, resolution, frame_queue: queue.Queue, stop_event: threading.Event
+):
     """
-    _, imencode_image = cv2.imencode(".jpg", frame)
-    return imencode_image.tobytes()
+    Runs in a background thread.
+    Continuously captures frames and puts them in the queue.
+    """
+    logging.info(f"Starting camera thread: {source} at {resolution}")
+    cam = Camera(source=source, resolution=resolution)
+
+    try:
+        while not stop_event.is_set():
+            ret, frame = cam.read()
+            if ret:
+                # Keep only the latest frame in the queue to prevent lag
+                if frame_queue.full():
+                    try:
+                        frame_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                frame_queue.put(frame)
+            else:
+                time.sleep(0.1)  # Wait if camera is struggling
+
+            # Tiny sleep to let other threads work
+            time.sleep(0.01)
+    finally:
+        print("Releasing camera...")
+        cam.release()
 
 
-def setup() -> None:
-    # OpenCV is used to access the webcam.
-    video_capture = cv2.VideoCapture(0)
-
-    @app.get("/video/frame")
-    # Thanks to FastAPI's `app.get` it is easy to create a web route which always provides the latest image from OpenCV.
-    async def grab_video_frame() -> Response:
-        if not video_capture.isOpened():
-            return placeholder
-        # The `video_capture.read` call is a blocking function.
-        # So we run it in a separate thread (default executor) to avoid blocking the event loop.
-        _, frame = await run.io_bound(video_capture.read)
-        if frame is None:
-            return placeholder
-        # `convert` is a CPU-intensive function, so we run it in a separate process to avoid blocking the event loop and GIL.
-        jpeg = await run.cpu_bound(convert, frame)
-        return Response(content=jpeg, media_type="image/jpeg")
-
+# 2. THE UI LOGIC
+def start_ui(source, res, port, frame_queue: queue.Queue, stop_event: threading.Event):
     @ui.page("/")
-    def page():
-        # For non-flickering image updates and automatic bandwidth adaptation an interactive image is much better than `ui.image()`.
-        video_image = ui.interactive_image("/video/frame").classes("w-1/2 h-auto")
-        ui.button("shutdown", on_click=app.shutdown)
-        # A timer constantly updates the source of the image.
-        ui.timer(interval=0.1, callback=video_image.force_reload)
+    def index():
+        ui.label(f"Streaming: {source} ({res})").classes("text-h4")
+        placeholder = ui.interactive_image().classes("w-full max-w-2xl border-2")
 
-    async def disconnect() -> None:
-        """Disconnect all clients from current running server."""
-        for client_id in Client.instances:
-            await core.sio.disconnect(client_id)
+        async def update_stream():
+            while True:
+                # Non-blocking check of the queue
+                try:
+                    frame = frame_queue.get_nowait()
+                    # Convert to JPEG for the browser
+                    _, buffer = cv2.imencode(".jpg", frame)
+                    b64 = base64.b64encode(buffer.tobytes()).decode("utf-8")
+                    placeholder.set_source(f"data:image/jpeg;base64,{b64}")
+                except queue.Empty:
+                    pass
 
-    def handle_sigint(signum, frame) -> None:
-        # `disconnect` is async, so it must be called from the event loop; we use `ui.timer` to do so.
-        ui.timer(0.1, disconnect, once=True)
-        # Delay the default handler to allow the disconnect to complete.
-        ui.timer(1, lambda: signal.default_int_handler(signum, frame), once=True)
+                # Update at roughly 30 FPS
+                await asyncio.sleep(0.03)
 
-    async def cleanup() -> None:
-        # This prevents ugly stack traces when auto-reloading on code change,
-        # because otherwise disconnected clients try to reconnect to the newly started server.
-        await disconnect()
-        # Release the webcam hardware so it can be used by other applications again.
-        video_capture.release()
+        ui.timer(0.1, update_stream, once=True)
 
-    app.on_shutdown(cleanup)
-    # We also need to disconnect clients when the app is stopped with Ctrl+C,
-    # because otherwise they will keep requesting images which lead to unfinished subprocesses blocking the shutdown.
-    signal.signal(signal.SIGINT, handle_sigint)
+    # Cleanup when NiceGUI closes
+    app.on_shutdown(lambda: stop_event.set())
+
+    ui.run(port=port, title="Pi 5 Threaded Stream", reload=False)
 
 
-# All the setup is only done when the server starts. This avoids the webcam being accessed
-# by the auto-reload main process (see https://github.com/zauberzeug/nicegui/discussions/2321).
-app.on_startup(setup)
+# 3. THE CLI ENTRY POINT
+@click.command()
+@click.option("--source", default="usb0", help="usb0 or picamera0")
+@click.option("--res", default="640x480", help="Resolution (WxH)")
+@click.option("--port", default=8000, help="Web port")
+def main(source, res, port):
+    # Standard Python Queue (Thread-safe)
+    frame_queue = queue.Queue(maxsize=1)
+    stop_event = threading.Event()
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+    )
 
-ui.run(port=8000)
+    # Create and start the camera thread
+    t = threading.Thread(
+        target=camera_thread_worker,
+        args=(source, res, frame_queue, stop_event),
+        daemon=True,  # Thread dies if the main script stops
+    )
+    t.start()
+
+    # Start the NiceGUI loop
+    start_ui(source, res, port, frame_queue, stop_event)
+
+
+if __name__ in {"__main__", "__mp_main__"}:
+    main()

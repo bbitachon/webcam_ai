@@ -1,54 +1,53 @@
 import logging
 import sys
 
+import cv2
 
 
 class Camera:
     def __init__(self, source: str, resolution: str = "640x480"):
         self.source = source
-        self.frame_source()
-        self.resize = False
         self.resolution = resolution
+        self.resize = False
+
         self.logger = logging.getLogger()
+        self.frame_source()
 
     def frame_source(self):
-        # Parse input to determine if image source is a file, folder, video, or USB camera
-
+        """Parse input and initialize the specific camera backend."""
         if "usb" in self.source:
-            import cv2
             self.source_type = "usb"
-            usb_idx = int(self.source[3:])
+            try:
+                idx = int(self.source.replace("usb", ""))
+                self.capture = cv2.VideoCapture(idx)
+                # Optimization: Set hardware-level resolution if possible
+                self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.resW)
+                self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resH)
+            except ValueError:
+                self.logger.error(f"Invalid USB index in {self.source}")
+                sys.exit(1)
+
         elif "picamera" in self.source:
-            import libcamera
-            from picamera2 import Picamera2
-            self.source_type = "picamera"
-            picam_idx = int(self.source[8:])
-        else:
-            self.logger.error(f"Input {self.source} is invalid. Please try again.")
-            sys.exit(0)
+            try:
+                import libcamera
+                from picamera2 import Picamera2
 
-        # Load or initialize image source
-        if self.source_type == "usb":
-            cap_arg = usb_idx
-            self.capture = cv2.VideoCapture(cap_arg)
-
-            # Set camera or video resolution if specified by user
-            # if resolution:
-            #     _ = cap.set(3, resW)
-            #     _ = cap.set(4, res
-            # H)
-
-        elif self.source_type == "picamera":
-
-            self.capture = Picamera2()
-            self.capture.configure(
-                self.capture.create_video_configuration(
+                self.source_type = "picamera"
+                self.capture = Picamera2()
+                # Use main/lores as needed; here we align with your original lores logic
+                config = self.capture.create_video_configuration(
                     main={"size": (1920, 1080), "format": "RGB888"},
-                    lores={"size": (640, 480), "format": "RGB888"},
+                    lores={"size": (self.resW, self.resH), "format": "RGB888"},
                     transform=libcamera.Transform(hflip=True, vflip=True),
                 )
-            )
-            self.capture.start()
+                self.capture.configure(config)
+                self.capture.start()
+            except ImportError:
+                self.logger.error("PiCamera2 or libcamera not found.")
+                sys.exit(1)
+        else:
+            self.logger.error(f"Unsupported source: {self.source}")
+            sys.exit(1)
 
     @property
     def resolution(self) -> str:
@@ -56,43 +55,41 @@ class Camera:
 
     @resolution.setter
     def resolution(self, resolution: str):
-        self.resize = False
+        self.resize = True
         self.resW, self.resH = int(resolution.split("x")[0]), int(
             resolution.split("x")[1]
         )
         self._resolution = resolution
 
     def read(self):
-        if (
-            self.source_type == "usb"
-        ):  # If source is a USB camera, grab frame from camera
+        if self.source_type == "usb":
             ret, frame = self.capture.read()
-            if (frame is None) or (not ret):
-                self.logger.error(
-                    "Unable to read frames from the camera. This indicates the camera is disconnected or not working. Exiting program."
-                )
-        elif (
-            self.source_type == "picamera"
-        ):  # If source is a Picamera, grab frames using picamera interface
+
+        elif self.source_type == "picamera":
+            # Picamera2 capture_array is usually blocking and returns the array
             frame = self.capture.capture_array("lores")
-            ret = True
-            if frame is None:
-                self.logger.error(
-                    "Unable to read frames from the Picamera. This indicates the camera is disconnected or not working. Exiting program."
-                )
-                ret = False
+            ret = frame is not None
 
-        # Resize frame to desired display resolution
-        if ret == True:
+        if not ret or frame is None:
+            self.logger.error("Failed to retrieve frame. Camera may be disconnected.")
+            return False, None
 
-            if self.resize == True:
+        # Resize if the hardware output doesn't match the requested internal resolution
+        if self.resize:
+            # Check if frame size already matches to avoid redundant compute
+            if frame.shape[1] != self.resW or frame.shape[0] != self.resH:
                 frame = cv2.resize(
                     frame, (self.resW, self.resH), interpolation=cv2.INTER_LINEAR
                 )
-        return ret, frame
+
+        return True, frame
 
     def release(self):
         self.logger.info("Shutting down camera")
         if self.source_type == "usb":
             self.capture.release()
-        elif self.source_type == "picamera
+        elif self.source_type == "picamera":
+            self.capture.stop()
+
+    def __del__(self):
+        self.release()
