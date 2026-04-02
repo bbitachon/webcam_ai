@@ -28,7 +28,7 @@ def camera_thread_worker(source, resolution, stop_event: threading.Event):
             ret, frame = cam.read()
             if ret:
                 # Keep only the latest frame in the queue to prevent lag
-                _, buffer = cv2.imencode(".jpg", frame)
+                _, buffer = cv2.imencode(".jpg", frame)  # type: ignore
                 state.latest_jpeg = buffer.tobytes()
             else:
                 time.sleep(0.1)  # Wait if camera is struggling
