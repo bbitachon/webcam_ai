@@ -89,6 +89,7 @@ celerybeat-schedule
 .splat
 venv/
 ENV/
+.poop
 
 # Spyder project settings
 .spyderproject

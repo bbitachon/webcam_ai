@@ -11,7 +11,11 @@ dependencies = [
     "nicegui==3.8.0",
     "opencv-python==4.13.0.92"
 ]
+
 authors = [
     {name = "Bertold Ian Bitachon"},
 ]
-requires-python = "==3.11.5"
+requires-python = ">=3.11.5"
+
+[tool.setuptools.packages.find]
+where = ["src"]

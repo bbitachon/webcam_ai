@@ -10,7 +10,7 @@ import cv2
 from nicegui import app, ui
 
 # Import your class from your other file
-from camera_service import Camera
+from webcam_ai.camera_service import Camera
 
 
 # 1. THE PRODUCER (Thread-based)
