@@ -1,7 +1,10 @@
 import logging
+import os
+import queue
 import sys
 import threading
 import time
+from datetime import datetime
 
 import cv2
 
@@ -109,9 +112,16 @@ class StreamState:
 
 class CameraWorker:
     def __init__(
-        self, camera: Camera, stream_state: StreamState, stop_event: threading.Event
+        self,
+        camera: Camera,
+        frame_queue: queue.Queue,
+        trigger: MotionTrigger,
+        stream_state: StreamState,
+        stop_event: threading.Event,
     ):
         self.camera = camera
+        self.trigger = trigger
+        self.frame_queue = frame_queue
         self.state = stream_state
         self.stop_event = stop_event
         self.logger = logging.getLogger()
@@ -124,6 +134,13 @@ class CameraWorker:
                     # Keep only the latest frame in the queue to prevent lag
                     _, buffer = cv2.imencode(".jpg", frame)  # type: ignore
                     self.state.latest_jpeg = buffer.tobytes()
+                    self.trigger.motion_detection(frame)
+
+                    if not self.frame_queue.empty():
+                        self.frame_queue.get()
+
+                    self.frame_queue.put(frame.copy())
+
                 else:
                     time.sleep(0.1)  # Wait if camera is struggling
 
@@ -132,3 +149,52 @@ class CameraWorker:
         finally:
             logging.info("Releasing camera...")
             self.camera.release()
+
+
+class RecorderWorker:
+    def __init__(
+        self,
+        frame_queue: queue.Queue,
+        trigger_semaphore: threading.Semaphore,
+        busy_event: threading.Event,
+        stop_event: threading.Event,
+    ):
+        self.frame_queue = frame_queue
+        self.trigger_semaphore = trigger_semaphore
+        self.busy_event = busy_event
+        self.stop_event = stop_event
+        self.logger = logging.getLogger()
+        self.save_dir = "logging"
+        os.makedirs(self.save_dir, exist_ok=True)
+
+    def run(self):
+        while not self.stop_event.is_set():
+            # This thread SLEEPS here until the Semaphore is released by MotionDetector
+            if self.trigger_semaphore.acquire(timeout=1.0):
+                self.busy_event.set()  # Tell MotionDetector to ignore frames for a bit
+
+                self.logger.info("Recording started...")
+                now = datetime.now()
+                timestamp = str("{date:%Y-%m-%d_%H%M%S}".format(date=now))
+
+                # 1. Setup VideoWriter
+                # (Use a fixed frame rate for the 15s clip)
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                filename = os.path.join(self.save_dir, f"event_{timestamp}.mp4")
+                out = cv2.VideoWriter(filename, fourcc, 30, (640, 480))
+
+                start_time = time.time()
+                while time.time() - start_time < 15:  # Record for 15 seconds
+                    try:
+                        f = self.frame_queue.get(timeout=0.1)
+                        out.write(f)
+                    except:
+                        continue
+
+                out.release()
+                self.logger.info(f"Recording saved as {filename}")
+
+                # --- FUTURE YOLO PROCESSING ---
+                # You would call your YOLO function here on 'filename'
+
+                self.busy_event.clear()  # Ready for next motion

@@ -9,7 +9,8 @@ from fastapi import Response
 from nicegui import app, ui
 
 # Import your class from your other file
-from webcam_ai.camera_service import Camera, CameraWorker, StreamState
+from webcam_ai.camera_service import Camera, CameraWorker, RecorderWorker, StreamState
+from webcam_ai.motion_trigger import MotionTrigger
 
 state = StreamState()
 
@@ -46,14 +47,30 @@ def start_ui(source, res, port, stop_event: threading.Event):
 def main(source, res, port):
     # Standard Python Queue (Thread-safe)
     frame_queue = queue.Queue(maxsize=1)
+    trigger_queue = threading.Semaphore(0)
     stop_event = threading.Event()
+    busy_event = threading.Event()
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
     )
 
     camera = Camera(source=source, resolution=res)
+    trigger_implemented = MotionTrigger(
+        trigger_queue=trigger_queue, busy_event=busy_event
+    )
     camera_worker = CameraWorker(
-        camera=camera, stream_state=state, stop_event=stop_event
+        camera=camera,
+        frame_queue=frame_queue,
+        trigger=trigger_implemented,
+        stream_state=state,
+        stop_event=stop_event,
+    )
+
+    recorder_worker = RecorderWorker(
+        frame_queue=frame_queue,
+        trigger_semaphore=trigger_queue,
+        busy_event=busy_event,
+        stop_event=stop_event,
     )
 
     # Create and start the camera thread (producer)
@@ -62,6 +79,13 @@ def main(source, res, port):
         daemon=True,  # Thread dies if the main script stops
     )
     camera_thread.start()
+
+    # Create and start the recorder thread (consumer)
+    recorder_thread = threading.Thread(
+        target=recorder_worker.run,
+        daemon=True,  # Thread dies if the main script stops
+    )
+    recorder_thread.start()
 
     # Start the NiceGUI loop
     start_ui(source, res, port, stop_event)

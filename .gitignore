@@ -115,12 +115,4 @@ ENV/
 /.DS_Store
 .DS_Store
 
-instrument_base.py
-splat/.DS_Store
-
-FrequencySweep.py
-IVSweep.py
-mono_crash.0.0.json
-mono_crash.0.1.json
-mono_crash.0.2.json
-mono_crash.0.3.json
+logging/
