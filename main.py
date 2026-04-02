@@ -63,6 +63,7 @@ def start_ui(source, res, port, frame_queue: queue.Queue, stop_event: threading.
                     placeholder.set_source(f"data:image/jpeg;base64,{b64}")
                 except queue.Empty:
                     pass
+
                 # Update at roughly 30 FPS
                 await asyncio.sleep(0.03)
 
