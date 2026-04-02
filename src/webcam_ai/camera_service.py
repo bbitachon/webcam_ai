@@ -93,3 +93,8 @@ class Camera:
 
     def __del__(self):
         self.release()
+
+
+class StreamState:
+    def __init__(self):
+        self.latest_jpeg = None

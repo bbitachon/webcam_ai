@@ -7,16 +7,17 @@ import time
 
 import click
 import cv2
+from fastapi import Response
 from nicegui import app, ui
 
 # Import your class from your other file
-from webcam_ai.camera_service import Camera
+from webcam_ai.camera_service import Camera, StreamState
+
+state = StreamState()
 
 
 # 1. THE PRODUCER (Thread-based)
-def camera_thread_worker(
-    source, resolution, frame_queue: queue.Queue, stop_event: threading.Event
-):
+def camera_thread_worker(source, resolution, stop_event: threading.Event):
     """
     Runs in a background thread.
     Continuously captures frames and puts them in the queue.
@@ -29,12 +30,8 @@ def camera_thread_worker(
             ret, frame = cam.read()
             if ret:
                 # Keep only the latest frame in the queue to prevent lag
-                if frame_queue.full():
-                    try:
-                        frame_queue.get_nowait()
-                    except queue.Empty:
-                        pass
-                frame_queue.put(frame)
+                _, buffer = cv2.imencode(".jpg", frame)
+                state.latest_jpeg = buffer.tobytes()
             else:
                 time.sleep(0.1)  # Wait if camera is struggling
 
@@ -45,29 +42,23 @@ def camera_thread_worker(
         cam.release()
 
 
+@app.get("/video/stream")
+def video_stream():
+    if state.latest_jpeg is not None:
+        return Response(content=state.latest_jpeg, media_type="image/jpeg")
+    return Response(status_code=404)
+
+
 # 2. THE UI LOGIC
-def start_ui(source, res, port, frame_queue: queue.Queue, stop_event: threading.Event):
+def start_ui(source, res, port, stop_event: threading.Event):
     @ui.page("/")
     def index():
         ui.label(f"Streaming: {source} ({res})").classes("text-h4")
-        placeholder = ui.interactive_image().classes("w-full max-w-2xl border-2")
+        video_image = ui.interactive_image("/video/stream").classes(
+            "w-full max-w-2xl border-2"
+        )
 
-        async def update_stream():
-            while True:
-                # Non-blocking check of the queue
-                try:
-                    frame = frame_queue.get_nowait()
-                    # Convert to JPEG for the browser
-                    _, buffer = cv2.imencode(".jpg", frame)
-                    b64 = base64.b64encode(buffer.tobytes()).decode("utf-8")
-                    placeholder.set_source(f"data:image/jpeg;base64,{b64}")
-                except queue.Empty:
-                    pass
-
-                # Update at roughly 30 FPS
-                await asyncio.sleep(0.03)
-
-        ui.timer(0.1, update_stream, once=True)
+        ui.timer(0.1, callback=video_image.force_reload)
 
     # Cleanup when NiceGUI closes
     app.on_shutdown(lambda: stop_event.set())
@@ -79,7 +70,7 @@ def start_ui(source, res, port, frame_queue: queue.Queue, stop_event: threading.
 @click.command()
 @click.option("--source", default="usb0", help="usb0 or picamera0")
 @click.option("--res", default="640x480", help="Resolution (WxH)")
-@click.option("--port", default=8000, help="Web port")
+@click.option("--port", default=8080, help="Web port")
 def main(source, res, port):
     # Standard Python Queue (Thread-safe)
     frame_queue = queue.Queue(maxsize=1)
