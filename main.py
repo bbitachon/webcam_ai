@@ -41,7 +41,7 @@ def camera_thread_worker(
             # Tiny sleep to let other threads work
             time.sleep(0.01)
     finally:
-        print("Releasing camera...")
+        logging.info("Releasing camera...")
         cam.release()
 
 
