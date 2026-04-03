@@ -1,6 +1,7 @@
 import logging
 import os
 import queue
+import shutil
 import sys
 import threading
 import time
@@ -32,6 +33,9 @@ class YOLOWorker(object):
         self.logger = logging.getLogger()
         self.model = model
         self.save_dir = "logging"
+
+        self.no_detection_dir = os.path.join(self.save_dir, "no_detections")
+        os.makedirs(self.no_detection_dir, exist_ok=True)
 
     @property
     def model(self) -> str:
@@ -78,7 +82,7 @@ class YOLOWorker(object):
             idle_time = (now - self.last_active_time["time"]).total_seconds()
 
             if idle_time < self.idle_seconds:
-                time.sleep(1)
+                time.sleep(60 * 10)
                 continue
 
             if self.detection_queue.empty():
@@ -128,6 +132,15 @@ class YOLOWorker(object):
 
         if not counts:
             self.logger.info("No detections found by YOLO")
+            try:
+                # Construct the destination path
+                file_name = os.path.basename(event_dir)
+                dest_path = os.path.join(self.no_detection_dir, file_name)
+
+                # Move the file
+                shutil.move(event_dir, dest_path)
+            except Exception as e:
+                self.logger.error(f"Failed to move file: {e}")
             return
 
         rows = []

@@ -44,9 +44,11 @@ def start_ui(source, res, port, stop_event: threading.Event):
 @click.option("--source", default="usb0", help="usb0 or picamera0")
 @click.option("--res", default="640x480", help="Resolution (WxH)")
 @click.option("--port", default=8080, help="Web port")
-@click.option("--model", default="yolov8n.pt", help="Path to YOLO model")
 @click.option(
-    "--idle-seconds", default=60, help="Idle time before running YOLO detection"
+    "--model", default="./train11/weights/best_ncnn_model", help="Path to YOLO model"
+)
+@click.option(
+    "--idle-seconds", default=60 * 10, help="Idle time before running YOLO detection"
 )
 def main(source, res, port, model, idle_seconds):
     # Standard Python Queue (Thread-safe)

@@ -11,6 +11,8 @@ dependencies = [
     "nicegui==3.8.0",
     "opencv-python==4.13.0.92",
     "pandas==3.0.2",
+    "numpy>=1.23.0",
+    "ultralytics==8.3.234",
 ]
 
 authors = [

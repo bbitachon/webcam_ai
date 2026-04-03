@@ -34,12 +34,16 @@ def get_event_files(directory="logging"):
             except ValueError:
                 continue
     # Sort by date descending (newest first)
-    return sorted(files, key=lambda x: x["datetime"], reverse=True)
+    return sorted(files, key=lambda x: x["datetime"])
 
 
 @cli.command()
 @click.option("--n", default=5, help="Number of most recent events to process.")
-@click.option("--model", default="yolov8n.pt", help="Path to YOLO model.")
+@click.option(
+    "--model",
+    default="./train11/weights/best_ncnn_model",
+    help="Path to YOLO model.",
+)
 def last(n, model):
     """Process the last N events."""
     events = get_event_files()[:n]
@@ -54,7 +58,9 @@ def last(n, model):
 @cli.command()
 @click.option("--start", required=True, help="Start date (YYYY-MM-DD).")
 @click.option("--end", required=True, help="End date (YYYY-MM-DD).")
-@click.option("--model", default="yolov8n.pt", help="Path to YOLO model.")
+@click.option(
+    "--model", default="./train11/weights/best_ncnn_model", help="Path to YOLO model."
+)
 def range(start, end, model):
     """Process events within a specific date range."""
     start_dt = datetime.strptime(start, "%Y-%m-%d")
