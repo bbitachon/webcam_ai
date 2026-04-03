@@ -1,11 +1,15 @@
 import logging
+import os
 import queue
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import click
+import pandas as pd
+import plotly.graph_objects as go
 from fastapi import Response
 from nicegui import app, ui
+from plotly.subplots import make_subplots
 
 # Import your class from your other file
 from webcam_ai.camera_service import Camera, CameraWorker, RecorderWorker, StreamState
@@ -13,6 +17,82 @@ from webcam_ai.detection_worker import YOLOWorker
 from webcam_ai.motion_trigger import MotionTrigger
 
 state = StreamState()
+
+
+# --- 1. ANALYTICS DATA LOGIC ---
+def load_data():
+    save_dir = "logging"
+    det_path = os.path.join(save_dir, "detection_log.csv")
+    beh_path = os.path.join(save_dir, "pee_log.csv")
+
+    # Defaults if files don't exist
+    df_det = pd.DataFrame(columns=["timestamp", "class", "count", "avg_confidence"])
+    df_beh = pd.DataFrame(columns=["timestamp", "class", "total_confidence"])
+
+    if os.path.exists(det_path):
+        df_det = pd.read_csv(det_path)
+        df_det["timestamp"] = pd.to_datetime(
+            df_det["timestamp"], format="%Y-%m-%d_%H%M%S"
+        )
+
+    if os.path.exists(beh_path):
+        df_beh = pd.read_csv(beh_path)
+        df_beh["timestamp"] = pd.to_datetime(
+            df_beh["timestamp"], format="%Y-%m-%d_%H%M%S"
+        )
+
+    cutoff = datetime.now() - timedelta(hours=24)
+    return df_det[df_det["timestamp"] >= cutoff], df_beh[df_beh["timestamp"] >= cutoff]
+
+
+def build_figure(df_det, df_beh):
+    color_map = {
+        "Kiti": "red",
+        "Alejandro": "blue",
+        "Elsa": "green",
+        "peeing": "purple",
+        "pooing": "orange",
+    }
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.1,
+        subplot_titles=("Detection Confidence", "Behavior Confidence"),
+    )
+
+    for cls in df_det["class"].unique():
+        cdf = df_det[df_det["class"] == cls]
+        fig.add_trace(
+            go.Scatter(
+                x=cdf["timestamp"],
+                y=cdf["count"] * cdf["avg_confidence"],
+                mode="markers",
+                name=cls,
+                marker=dict(color=color_map.get(cls, "gray")),
+            ),
+            row=1,
+            col=1,
+        )
+
+    for cls in df_beh["class"].unique():
+        bdf = df_beh[df_beh["class"] == cls]
+        fig.add_trace(
+            go.Scatter(
+                x=bdf["timestamp"],
+                y=bdf["total_confidence"],
+                mode="markers",
+                name=cls,
+                marker=dict(color=color_map.get(cls, "gray")),
+            ),
+            row=2,
+            col=1,
+        )
+
+    fig.update_layout(
+        height=600, title="Cat Activity (Last 24h)", template="plotly_white"
+    )
+    return fig
 
 
 @app.get("/video/stream")
@@ -26,12 +106,27 @@ def video_stream():
 def start_ui(source, res, port, stop_event: threading.Event):
     @ui.page("/")
     def index():
-        ui.label(f"Streaming: {source} ({res})").classes("text-h4")
-        video_image = ui.interactive_image("/video/stream").classes(
-            "w-full max-w-2xl border-2"
-        )
+        with ui.column().classes("w-full max-w-5xl mx-auto items-center p-4"):
+            ui.label(f"Streaming: {source} ({res})").classes("text-h4")
+            video_image = ui.interactive_image("/video/stream").classes(
+                "w-full max-w-2xl border-2"
+            )
 
-        ui.timer(0.1, callback=video_image.force_reload)
+            ui.timer(0.1, callback=video_image.force_reload)
+
+            ui.label("Activity in the last 24 hours").classes("text-h5 mt-6")
+
+            # Load data and build figure
+            df_det, df_beh = load_data()
+            fig = build_figure(df_det, df_beh)
+            plotly_figure = ui.plotly(fig).classes("w-full max-w-3xl")
+
+            def refresh_data():
+                df_det, df_beh = load_data()
+                new_fig = build_figure(df_det, df_beh)
+                plotly_figure.update_figure(new_fig)
+
+            ui.timer(1800, callback=refresh_data)  # Refresh every 60 seconds
 
     # Cleanup when NiceGUI closes
     app.on_shutdown(lambda: stop_event.set())
