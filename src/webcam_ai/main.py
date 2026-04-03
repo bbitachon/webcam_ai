@@ -75,6 +75,8 @@ def build_figure(df_det, df_beh):
             col=1,
         )
 
+    fig.update_yaxes(title_text="Total Confidence", row=1, col=1)
+
     for cls in df_beh["class"].unique():
         bdf = df_beh[df_beh["class"] == cls]
         fig.add_trace(
@@ -88,6 +90,8 @@ def build_figure(df_det, df_beh):
             row=2,
             col=1,
         )
+
+    fig.update_yaxes(title_text="Total Confidence", row=2, col=1)
 
     fig.update_layout(
         height=600, title="Cat Activity (Last 24h)", template="plotly_white"
