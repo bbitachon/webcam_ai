@@ -155,14 +155,18 @@ class RecorderWorker:
     def __init__(
         self,
         frame_queue: queue.Queue,
+        detection_queue: queue.Queue,
         trigger_semaphore: threading.Semaphore,
         busy_event: threading.Event,
         stop_event: threading.Event,
+        last_active_time,
     ):
         self.frame_queue = frame_queue
+        self.detection_queue = detection_queue
         self.trigger_semaphore = trigger_semaphore
         self.busy_event = busy_event
         self.stop_event = stop_event
+        self.last_active_time = last_active_time
         self.logger = logging.getLogger()
         self.save_dir = "logging"
         os.makedirs(self.save_dir, exist_ok=True)
@@ -194,7 +198,14 @@ class RecorderWorker:
                 out.release()
                 self.logger.info(f"Recording saved as {filename}")
 
-                # --- FUTURE YOLO PROCESSING ---
-                # You would call your YOLO function here on 'filename'
+                # Put the event in detection queue for behavioral analysis
+                self.detection_queue.put(
+                    {
+                        "event_dir": filename,
+                        "timestamp": timestamp,
+                        "timestamp_iso": now.isoformat(),
+                    }
+                )
 
                 self.busy_event.clear()  # Ready for next motion
+                self.last_active_time["time"] = datetime.now()
