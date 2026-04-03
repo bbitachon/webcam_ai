@@ -56,7 +56,7 @@ def build_figure(df_det, df_beh):
     fig = make_subplots(
         rows=2,
         cols=1,
-        shared_xaxes=True,
+        shared_xaxes=False,
         vertical_spacing=0.1,
         subplot_titles=("Detection Confidence", "Behavior Confidence"),
     )
