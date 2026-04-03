@@ -94,8 +94,20 @@ def build_figure(df_det, df_beh):
     fig.update_yaxes(title_text="Total Confidence", row=2, col=1)
 
     fig.update_layout(
-        height=600, title="Cat Activity (Last 24h)", template="plotly_white"
+        height=700,
+        title="Cat Detection & Behavior (Last 24 Hours)",
+        hovermode="x unified",
+        margin=dict(l=40, r=20, t=60, b=40),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
     )
+
+    fig.update_xaxes(dtick=60 * 60 * 1000)
     return fig
 
 
