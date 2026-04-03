@@ -137,12 +137,12 @@ def start_ui(source, res, port, stop_event: threading.Event):
             fig = build_figure(df_det, df_beh)
             plotly_figure = ui.plotly(fig).classes("w-full max-w-3xl")
 
-            def refresh_data():
-                df_det, df_beh = load_data()
-                new_fig = build_figure(df_det, df_beh)
-                plotly_figure.update_figure(new_fig)
+        def refresh_data():
+            df_det, df_beh = load_data()
+            new_fig = build_figure(df_det, df_beh)
+            plotly_figure.update_figure(new_fig)
 
-            ui.timer(1800, callback=refresh_data)  # Refresh every 60 seconds
+        ui.timer(1800, callback=refresh_data)  # Refresh every 60 seconds
 
     # Cleanup when NiceGUI closes
     app.on_shutdown(lambda: stop_event.set())
