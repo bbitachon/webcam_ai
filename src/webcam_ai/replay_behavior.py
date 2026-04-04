@@ -4,116 +4,114 @@ import threading
 from datetime import datetime, timedelta
 
 import click
-import pandas as pd
 
-from webcam_ai.behavioral_worker import (
-    BehaviorWorker,  # Ensure this matches your filename
-)
+# Import your BehaviorWorker class
+from webcam_ai.behavioral_worker import BehaviorWorker
 
 
 @click.group()
 def cli():
-    """Manually re-run Behavior Analysis on past cat detections."""
+    """Tool to reprocess past video events through Behavioral Analysis (Squat/Pee)."""
     pass
 
 
-def get_cat_events_from_log(limit=None, start_date=None, end_date=None):
-    """Reads detection_log.csv to find videos where a cat was actually found."""
-    log_path = "logging/detection_log.csv"
-    if not os.path.exists(log_path):
-        click.echo("Error: detection_log.csv not found. Run YOLO replay first.")
+def get_event_files(directory="logging"):
+    """Helper to list and parse existing event files from the folder."""
+    files = []
+    if not os.path.exists(directory):
         return []
 
-    df = pd.read_csv(log_path)
-    # Filter for 'cat' class only
-    df = df[df["class"].str.lower() == "cat"]
-    df["dt"] = pd.to_datetime(df["timestamp"], format="%Y-%m-%d_%H%M%S")
-
-    if start_date and end_date:
-        s = datetime.strptime(start_date, "%Y-%m-%d")
-        e = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
-        df = df[(df["dt"] >= s) & (df["dt"] < e)]
-
-    df = df.sort_values("dt", ascending=False)
-
-    if limit:
-        df = df.head(limit)
-
-    events = []
-    for _, row in df.iterrows():
-        # Reconstruct path from timestamp
-        # Matches your RecorderWorker format: event_YYYY-MM-DD_HHMMSS.mp4
-        filename = f"event_{row['timestamp']}.mp4"
-        path = os.path.join("logging", filename)
-
-        if os.path.exists(path):
-            events.append(
-                {
-                    "event_dir": path,
-                    "timestamp": row["timestamp"],
-                    "timestamp_iso": row["timestamp iso"],
-                }
-            )
-    return events
+    for f in os.listdir(directory):
+        if f.startswith("event_") and f.endswith(".mp4"):
+            try:
+                ts_str = f.replace("event_", "").replace(".mp4", "")
+                dt = datetime.strptime(ts_str, "%Y-%m-%d_%H%M%S")
+                files.append(
+                    {
+                        "path": os.path.join(directory, f),
+                        "filename": f,
+                        "datetime": dt,
+                        "timestamp": ts_str,
+                    }
+                )
+            except ValueError:
+                continue
+    # Sort by date descending (newest first)
+    return sorted(files, key=lambda x: x["datetime"], reverse=True)
 
 
 @cli.command()
-@click.option("--n", default=5, help="Number of recent cat events to analyze.")
-@click.option("--squat-model", default="/home/bertold/Documents/webcam_ai/squatting_model/weights/best_ncnn_model")
-@click.option("--pee-model", default="/home/bertold/Documents/webcam_ai/peeing_model/weights/best_ncnn_model")
+@click.option("--n", default=5, help="Number of most recent events to process.")
+@click.option("--squat-model", default="squatting_model/weights/best_ncnn_model")
+@click.option("--pee-model", default="peeing_model/weights/best_ncnn_model")
 def last(n, squat_model, pee_model):
-    """Analyze the last N cat detections."""
-    events = get_cat_events_from_log(limit=n)
+    """Process the last N events found in the logging folder."""
+    events = get_event_files()[:n]
     if not events:
-        click.echo("No cat events found to process.")
+        click.echo("No event files found.")
         return
 
-    click.echo(f"Found {len(events)} cat videos. Starting analysis...")
-    run_behavior_replay(events, squat_model, pee_model)
+    click.echo(f"Processing the last {len(events)} events...")
+    run_behavior_on_events(events, squat_model, pee_model)
 
 
 @cli.command()
-@click.option("--start", required=True, help="Start date (YYYY-MM-DD)")
-@click.option("--end", required=True, help="End date (YYYY-MM-DD)")
-@click.option("--squat-model", default="squat_model.pt")
-@click.option("--pee-model", default="pee_model.pt")
+@click.option("--start", required=True, help="Start date (YYYY-MM-DD).")
+@click.option("--end", required=True, help="End date (YYYY-MM-DD).")
+@click.option("--squat-model", default="squatting_model/weights/best_ncnn_model")
+@click.option("--pee-model", default="peeing_model/weights/best_ncnn_model")
 def range(start, end, squat_model, pee_model):
-    """Analyze cat detections within a date range."""
-    events = get_cat_events_from_log(start_date=start, end_date=end)
-    if not events:
-        click.echo(f"No cat events found between {start} and {end}.")
+    """Process events within a specific date range."""
+    try:
+        start_dt = datetime.strptime(start, "%Y-%m-%d")
+        end_dt = datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1)
+    except ValueError:
+        click.echo("Error: Date format must be YYYY-MM-DD")
         return
 
-    click.echo(f"Found {len(events)} events in range. Starting...")
-    run_behavior_replay(events, squat_model, pee_model)
+    all_events = get_event_files()
+    filtered = [e for e in all_events if start_dt <= e["datetime"] < end_dt]
+
+    if not filtered:
+        click.echo(f"No events found between {start} and {end}.")
+        return
+
+    click.echo(f"Processing {len(filtered)} events from range...")
+    run_behavior_on_events(filtered, squat_model, pee_model)
 
 
-def run_behavior_replay(events, squat_m, pee_m):
-    # Setup dummy objects to satisfy BehaviorWorker requirements
-    beh_q = queue.Queue()
-    det_q = queue.Queue()  # Empty detection queue so Behavior doesn't wait
+def run_behavior_on_events(events, squat_path, pee_path):
+    # Setup shared resources to satisfy BehaviorWorker's __init__
+    detection_queue = queue.Queue()
+    behavior_queue = queue.Queue()
     stop_event = threading.Event()
-    busy_event = threading.Event()  # Ensure NOT set so worker runs
-    last_act = {"time": datetime(1970, 1, 1)}
+    busy_event = threading.Event()  # Keep clear so worker doesn't pause
+    # Set last_active far in the past to bypass idle_seconds check
+    last_active = {"time": datetime.now() - timedelta(days=365)}
 
+    # Initialize the Behavior Worker
     worker = BehaviorWorker(
-        squat_model=squat_m,
-        pee_model=pee_m,
-        detection_queue=det_q,
-        behavior_queue=beh_q,
+        squat_model=squat_path,
+        pee_model=pee_path,
+        detection_queue=detection_queue,
+        behavior_queue=behavior_queue,
         busy_event=busy_event,
         stop_event=stop_event,
-        last_active_time=last_act,
-        idle_seconds=0,  # No waiting
+        last_active_time=last_active,
+        idle_seconds=0,  # No cooldown needed for replay
     )
 
-    for event in events:
-        click.echo(f"Processing: {event['event_dir']}")
-        worker.process_event(
-            event["event_dir"], event["timestamp"], event["timestamp_iso"]
-        )
+    click.echo("Starting Behavior Analysis. Press Ctrl+C to stop.")
+    try:
+        for e in events:
+            # We call process_event directly on each file
+            click.echo(f"Analyzing: {e['filename']}...")
 
-    click.echo("Done! Check pee_log.csv and squat_log.csv for results.")
+            # Using the timestamp from the filename ensures logs match the original event
+            worker.process_event(e["path"], e["timestamp"], e["datetime"].isoformat())
+
+    except KeyboardInterrupt:
+        click.echo("\nStopping...")
 
 
 if __name__ == "__main__":
