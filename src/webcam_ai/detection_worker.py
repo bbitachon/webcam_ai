@@ -126,7 +126,7 @@ class YOLOWorker(object):
                 classidx = int(box.cls.item())
                 classname = self.labels[classidx]
 
-                if conf > 0.7:
+                if conf > 0.66:
                     counts[classname] = counts.get(classname, 0) + 1
                     conf_sums[classname] = conf_sums.get(classname, 0) + conf
 
@@ -163,3 +163,11 @@ class YOLOWorker(object):
             )
 
         self.append_log("detection_log.csv", rows)
+
+        self.behavior_queue.put(
+            {
+                "event_dir": event_dir,
+                "timestamp": timestamp,
+                "timestamp_iso": timestamp_iso,
+            }
+        )
