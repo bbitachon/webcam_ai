@@ -78,9 +78,7 @@ def build_figure(df_det, df_beh):
 
     fig.update_yaxes(
         title_text="Total Confidence",
-        range=[
-            10,
-        ],  # detection scale
+        range=[10,None],  # detection scale
         row=1,
         col=1,
     )

@@ -46,7 +46,7 @@ def get_event_files(directory="logging"):
 @click.option("--pee-model", default="peeing_model/weights/best_ncnn_model")
 def last(n, squat_model, pee_model):
     """Process the last N events found in the logging folder."""
-    events = get_event_files()[:n]
+    events = get_event_files()[-n:]
     if not events:
         click.echo("No event files found.")
         return
