@@ -137,7 +137,10 @@ def start_ui(source, res, port, stop_event: threading.Event):
             fig = build_figure(df_det, df_beh)
             plotly_figure = ui.plotly(fig).classes("w-full max-w-3xl")
 
-        def refresh_data():
+        async def refresh_data():
+            # Only update if the specific client (user) is still active
+            if not ui.context.client.connected:
+                return
             df_det, df_beh = load_data()
             new_fig = build_figure(df_det, df_beh)
             plotly_figure.update_figure(new_fig)
