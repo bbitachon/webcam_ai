@@ -25,3 +25,4 @@ where = ["src"]
 
 [project.scripts]
 replay-detection = "webcam_ai.replay_detection:cli"
+replay-behavior = "webcam_ai.replay_behavior:cli"
