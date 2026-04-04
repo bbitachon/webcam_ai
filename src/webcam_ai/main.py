@@ -12,6 +12,7 @@ from nicegui import app, ui
 from plotly.subplots import make_subplots
 
 # Import your class from your other file
+from webcam_ai.behavioral_worker import BehaviorWorker
 from webcam_ai.camera_service import Camera, CameraWorker, RecorderWorker, StreamState
 from webcam_ai.detection_worker import YOLOWorker
 from webcam_ai.motion_trigger import MotionTrigger
@@ -213,6 +214,17 @@ def main(source, res, port, model, idle_seconds):
         idle_seconds=idle_seconds,
     )
 
+    behavior_worker = BehaviorWorker(
+        squat_model="squatting_model/weights/best_ncnn_model",
+        pee_model="peeing_model/weights/best_ncnn_model",
+        detection_queue=detection_queue,
+        behavior_queue=behavior_queue,
+        busy_event=busy_event,
+        stop_event=stop_event,
+        last_active_time=last_active_time,
+        idle_seconds=idle_seconds,
+    )
+
     # Create and start the camera thread (producer)
     camera_thread = threading.Thread(
         target=camera_worker.run,
@@ -233,6 +245,13 @@ def main(source, res, port, model, idle_seconds):
         daemon=True,  # Thread dies if the main script stops
     )
     yolo_thread.start()
+
+    # Create and start the Behavior analysis thread
+    behavior_thread = threading.Thread(
+        target=behavior_worker.run,
+        daemon=True,  # Thread dies if the main script stops
+    )
+    behavior_thread.start()
 
     # Start the NiceGUI loop
     start_ui(source, res, port, stop_event)

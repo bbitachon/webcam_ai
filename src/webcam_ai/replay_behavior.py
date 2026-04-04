@@ -36,8 +36,8 @@ def get_event_files(directory="logging"):
                 )
             except ValueError:
                 continue
-    # Sort by date descending (newest first)
-    return sorted(files, key=lambda x: x["datetime"], reverse=True)
+    # Sort by date ascending (oldest first)
+    return sorted(files, key=lambda x: x["datetime"])
 
 
 @cli.command()
