@@ -57,7 +57,7 @@ def build_figure(df_det, df_beh):
     fig = make_subplots(
         rows=2,
         cols=1,
-        shared_xaxes=False,
+        shared_xaxes=True,
         vertical_spacing=0.1,
         subplot_titles=("Detection Confidence", "Behavior Confidence"),
     )
@@ -78,7 +78,9 @@ def build_figure(df_det, df_beh):
 
     fig.update_yaxes(
         title_text="Total Confidence",
-        range=[10, 60],  # detection scale
+        range=[
+            10,
+        ],  # detection scale
         row=1,
         col=1,
     )
