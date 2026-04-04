@@ -134,7 +134,7 @@ class BehaviorWorker(object):
         # PASS 1: Squat detection
         # -----------------------------
 
-        results = self._implemented_squat_model(event_dir, verbose=False)
+        results = self._implemented_squat_model(event_dir, verbose=False, stream=True)
 
         for result in results:
 
@@ -201,7 +201,7 @@ class BehaviorWorker(object):
         # PASS 2: Pee detection
         # -----------------------------
 
-        results = self._implemented_pee_model(squat_frames, batch=1, verbose=False)
+        results = self._implemented_pee_model(squat_frames, verbose=False, stream=True)
 
         for result in results:
 
