@@ -128,7 +128,7 @@ class BehaviorWorker(object):
         pee_counts = {}
         pee_conf = {}
 
-        squat_frames = set()
+        squat_frames = []
 
         # -----------------------------
         # PASS 1: Squat detection
@@ -154,7 +154,7 @@ class BehaviorWorker(object):
                     conf_sums[classname] = conf_sums.get(classname, 0) + conf
 
                     if classname == "squat":
-                        squat_frames.add(result.orig_img)
+                        squat_frames.append(result.orig_img)
 
         if not counts:
             return
@@ -201,22 +201,24 @@ class BehaviorWorker(object):
         # PASS 2: Pee detection
         # -----------------------------
 
-        results = self._implemented_pee_model(squat_frames, verbose=False, stream=True)
+        for frame in squat_frames:
 
-        for result in results:
+            results = self._implemented_pee_model(frame, verbose=False, stream=True)
 
-            detections = result.boxes
+            for result in results:
 
-            for box in detections:
+                detections = result.boxes
 
-                conf = box.conf.item()
-                classidx = int(box.cls.item())
-                classname = self.pee_labels[classidx]
+                for box in detections:
 
-                if conf > 0.7:
+                    conf = box.conf.item()
+                    classidx = int(box.cls.item())
+                    classname = self.pee_labels[classidx]
 
-                    pee_counts[classname] = pee_counts.get(classname, 0) + 1
-                    pee_conf[classname] = pee_conf.get(classname, 0) + conf
+                    if conf > 0.7:
+
+                        pee_counts[classname] = pee_counts.get(classname, 0) + 1
+                        pee_conf[classname] = pee_conf.get(classname, 0) + conf
 
         if not pee_counts:
             return
