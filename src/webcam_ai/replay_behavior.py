@@ -59,8 +59,8 @@ def get_cat_events_from_log(limit=None, start_date=None, end_date=None):
 
 @cli.command()
 @click.option("--n", default=5, help="Number of recent cat events to analyze.")
-@click.option("--squat-model", default="squat_model.pt")
-@click.option("--pee-model", default="pee_model.pt")
+@click.option("--squat-model", default="/home/bertold/Documents/webcam_ai/squatting_model/weights/best_ncnn_model")
+@click.option("--pee-model", default="/home/bertold/Documents/webcam_ai/peeing_model/weights/best_ncnn_model")
 def last(n, squat_model, pee_model):
     """Analyze the last N cat detections."""
     events = get_cat_events_from_log(limit=n)
