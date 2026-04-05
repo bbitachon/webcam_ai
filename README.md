@@ -1,2 +1,2 @@
 ## Cat Litter Monitoring
-This is a repo for a cat litter monitoring system using Ultralytics' YOLO model(s) and NiceGUI for the frontend data visualization. The code is inteded to run on Raspberry Pi5.
+This is a repo for a cat litter monitoring system using Ultralytics' YOLO model(s) and NiceGUI for the frontend data visualization. The code is inteded to run on Raspberry Pi5. I vibe coded majority of this :D.
