@@ -78,7 +78,7 @@ def build_figure(df_det, df_beh):
 
     fig.update_yaxes(
         title_text="Total Confidence",
-        range=[10,None],  # detection scale
+        range=[10, None],  # detection scale
         row=1,
         col=1,
     )
@@ -144,12 +144,18 @@ def start_ui(source, res, port, stop_event: threading.Event):
             plotly_figure = ui.plotly(fig).classes("w-full max-w-3xl")
 
         async def refresh_data():
-            # Only update if the specific client (user) is still active
-            if not ui.context.client.connected:
-                return
-            df_det, df_beh = load_data()
-            new_fig = build_figure(df_det, df_beh)
-            plotly_figure.update_figure(new_fig)
+            try:
+                if not ui.context.client.connected:
+                    return
+                if plotly_figure.client is None:
+                    return
+
+                df_det, df_beh = load_data()
+                new_fig = build_figure(df_det, df_beh)
+                plotly_figure.update_figure(new_fig)
+
+            except Exception as e:
+                logging.debug(f"UI update skipped: {e}")
 
         ui.timer(1800, callback=refresh_data)  # Refresh every 60 seconds
 
