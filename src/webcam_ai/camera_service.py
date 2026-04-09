@@ -187,7 +187,7 @@ class RecorderWorker:
 
                 # 1. Setup VideoWriter
                 # (Use a fixed frame rate for the 15s clip)
-                fourcc = cv2.VideoWriter_fourcc(*"avc1")  # H.264 codec
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
                 filename = os.path.join(self.save_dir, f"event_{timestamp}.mp4")
                 out = cv2.VideoWriter(filename, fourcc, target_fps, (640, 480))
 
