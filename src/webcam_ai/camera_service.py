@@ -175,7 +175,7 @@ class RecorderWorker:
         target_fps = 10  # What you want the video to be
         camera_fps = 30  # What the camera is actually doing
         skip_rate = camera_fps // target_fps
-        
+
         while not self.stop_event.is_set():
             # This thread SLEEPS here until the Semaphore is released by MotionDetector
             if self.trigger_semaphore.acquire(timeout=1.0):
@@ -187,7 +187,7 @@ class RecorderWorker:
 
                 # 1. Setup VideoWriter
                 # (Use a fixed frame rate for the 15s clip)
-                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                fourcc = cv2.VideoWriter_fourcc(*"avc1")  # H.264 codec
                 filename = os.path.join(self.save_dir, f"event_{timestamp}.mp4")
                 out = cv2.VideoWriter(filename, fourcc, target_fps, (640, 480))
 
@@ -197,7 +197,9 @@ class RecorderWorker:
                 while time.time() - start_time < 15:  # Record for 15 seconds
                     try:
                         f = self.frame_queue.get(timeout=0.1)
-                        if frame_count % skip_rate == 0:  # Skip frames to achieve target FPS
+                        if (
+                            frame_count % skip_rate == 0
+                        ):  # Skip frames to achieve target FPS
                             out.write(f)
                         frame_count += 1
                     except:
