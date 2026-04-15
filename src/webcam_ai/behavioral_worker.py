@@ -242,6 +242,7 @@ class BehaviorWorker(object):
             )
 
         self.append_log("pee_log.csv", rows)
+        self.logger.info(f"Finished processing behavior event: {event_dir}")
 
 
 def main():
