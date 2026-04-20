@@ -395,7 +395,7 @@ class BehaviorWorker_x3d(BaseWorker):
             smoothed[i, 1:] = np.mean(results[start:end, 1:], axis=0)
         return smoothed
 
-    def run_inference(self, video_path: str, stride: int = 2, batch_size: int = 4):
+    def run_inference(self, video_path: str, stride: int = 2, batch_size: int = 8):
         """
         Extracts sliding window clips from the video and runs NCNN inference.
         """
@@ -447,6 +447,11 @@ class BehaviorWorker_x3d(BaseWorker):
                 _, out = ex.extract("out0")  # "out0" is standard PNNX output name
 
                 probs = np.array(out)
+
+                # logits = np.array(out)
+                # e_x = np.exp(logits - np.max(logits))
+                # probs = e_x / np.sum(e_x)
+
                 results.append([batch_mids[j]] + probs.tolist())
 
         return np.array(results), total_frames
