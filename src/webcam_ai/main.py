@@ -1,4 +1,4 @@
-import glob
+import numpy as np
 import logging
 import os
 import queue
@@ -32,62 +32,68 @@ def extract_start_time(filename):
     except Exception:
         return datetime.min
 
+def load_stitched_timeline(folder, fps=10, cutoff=None, window=1):
+    if not os.path.exists(folder):
+        return pd.DataFrame()
 
-def load_stitched_timeline(folder, pattern, fps=10, cutoff=None):
-    """Generic helper to stitch CSVs from a folder into a time-series dataframe."""
-    all_data = []
+    # Use your working list logic
+    csv_files = sorted(
+        [f for f in os.listdir(folder) if f.endswith(".csv")], 
+        key=extract_start_time
+    )
+
+    all_rows = []
     last_end = None
 
-    files = sorted(glob.glob(os.path.join(folder, pattern)), key=extract_start_time)
-
-    for f in files:
+    for f in csv_files:
         start_time = extract_start_time(f)
+        
+        # Only process if it's within the last 24 hours
         if cutoff and start_time < cutoff:
             continue
 
-        df = pd.read_csv(f)
-        # Identify class columns (everything except frame and timestamp_iso)
-        class_cols = [c for c in df.columns if c not in ["frame", "timestamp_iso"]]
+        path = os.path.join(folder, f)
+        df = pd.read_csv(path)
+        if df.empty:
+            continue
+
+        # Get the columns (idle, pee, poo OR cat names)
+        cols = [c for c in df.columns if c not in ["frame", "timestamp_iso"]]
+
+        if window > 1:
+            df[cols] = df[cols].rolling(window=window, min_periods=1, center=True).mean()
 
         for i in range(len(df)):
             t = start_time + timedelta(seconds=i / fps)
 
-            # Gap handling: break the line if > 2 seconds
-            if last_end and (t - last_end).total_seconds() > 2:
+            # Gap handling (Your working logic)
+            if last_end and (t - last_end).total_seconds() > 1:
                 gap_row = {"timestamp": last_end + timedelta(milliseconds=100)}
-                for c in class_cols:
-                    gap_row[c] = None
-                all_data.append(gap_row)
+                for c in cols:
+                    gap_row[c] = None # None breaks the line in Plotly
+                all_rows.append(gap_row)
 
-            row_data = {"timestamp": t}
-            for c in class_cols:
-                row_data[c] = df[c].iloc[i]
-            all_data.append(row_data)
+            new_row = {"timestamp": t}
+            for c in cols:
+                new_row[c] = df[c].iloc[i]
+            all_rows.append(new_row)
             last_end = t
 
-    return pd.DataFrame(all_data)
+    return pd.DataFrame(all_rows)
 
 
 # --- 1. ANALYTICS DATA LOGIC ---
-def load_data(fps=10):
+def load_data():
     save_dir = "logging"
     cutoff = datetime.now() - timedelta(hours=24)
 
-    # 2. Stitch Behavior Timelines (idle, peeing, pooing)
-    # Looking for the original behavior csv files
-    beh_folder = os.path.join(save_dir, "detection_timelines")
-    # We exclude filenames that have '_detection' in them to avoid mixing
-    df_beh = load_stitched_timeline(beh_folder, "event_*[0-9].csv", fps, cutoff)
+    # Detections (Kiti, Alejandro, Elsa)
+    df_det = load_stitched_timeline(os.path.join(save_dir, "detection_timelines"), cutoff=cutoff, window=5)
+    
+    # Behaviors (idle, peeing, pooing)
+    df_beh = load_stitched_timeline(os.path.join(save_dir, "behavior_timelines"), cutoff=cutoff)
 
-    # 3. Stitch Detection Timelines (Kiti, Alejandro, etc.)
-    det_timeline_folder = os.path.join(
-        save_dir, "behavioral_timelines"
-    )  # or your specific folder
-    df_det = load_stitched_timeline(
-        det_timeline_folder, "event_*[0-9].csv", fps, cutoff
-    )
-
-    return df_beh, df_det
+    return df_det, df_beh
 
 
 def build_figure(df_det, df_beh):
@@ -113,13 +119,14 @@ def build_figure(df_det, df_beh):
             fig.add_trace(
                 go.Scatter(
                     x=df_det["timestamp"],
-                    y=df_det[cls],
+                    y=(df_det[cls]),
                     mode="lines",
+                    connectgaps=False,
                     name=f"See: {cls}",
                     line=dict(color=color_map.get(cls, "gray"), width=1.5),
-                    fill="tozeroy",
+                    # fill="tozeroy",
                 ),
-                row=2,
+                row=1,
                 col=1,
             )
 
@@ -133,6 +140,7 @@ def build_figure(df_det, df_beh):
                     y=df_beh[cls],
                     name=cls.capitalize(),
                     mode="lines",
+                    connectgaps=False,
                     line=dict(color=color_map[cls], width=2),
                     fill="tozeroy",
                 ),
@@ -147,6 +155,7 @@ def build_figure(df_det, df_beh):
                 y=df_beh["idle"],
                 name="Idle",
                 mode="lines",
+                connectgaps=False,
                 line=dict(color=color_map["idle"], dash="dash", width=1),
                 opacity=0.5,
             ),
