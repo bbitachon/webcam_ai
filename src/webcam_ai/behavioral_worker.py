@@ -357,6 +357,9 @@ class BehaviorWorker_x3d(BaseWorker):
 
         # Initialize NCNN
         self.net = ncnn.Net()
+        self.net.opt.use_fp16_storage = True
+        self.net.opt.use_fp16_arithmetic = True
+        self.net.opt.use_fp16_packed = True
 
         self.net.load_param(param_path)
         self.net.load_model(bin_path)
@@ -474,7 +477,7 @@ class BehaviorWorker_x3d(BaseWorker):
             video_path = os.path.join(event_dir, video_files[0])
 
         probs_over_time, total_frames = self.run_inference(
-            video_path, stride=2, batch_size=16
+            video_path, stride=2, batch_size=30
         )
 
         if total_frames == 0 or len(probs_over_time) == 0:
