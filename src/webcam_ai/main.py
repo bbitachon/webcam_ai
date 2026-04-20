@@ -33,59 +33,61 @@ def extract_start_time(filename):
         return datetime.min
 
 
-# --- 1. ANALYTICS DATA LOGIC ---
-def load_data(fps=10):
-    save_dir = "logging"
-    det_path = os.path.join(save_dir, "detection_log.csv")
-    timeline_folder = os.path.join(save_dir, "timelines")
-
-    cutoff = datetime.now() - timedelta(hours=24)
-
-    # 1. Load Detection Data
-    df_det = pd.DataFrame(columns=["timestamp", "class", "count", "avg_confidence"])
-    if os.path.exists(det_path):
-        df_det = pd.read_csv(det_path)
-        df_det["timestamp"] = pd.to_datetime(
-            df_det["timestamp"], format="%Y-%m-%d_%H%M%S"
-        )
-        df_det = df_det[df_det["timestamp"] >= cutoff]
-
-    # 2. Process and Stitch Timelines
-    all_t, all_idle, all_pee, all_poo = [], [], [], []
+def load_stitched_timeline(folder, pattern, fps=10, cutoff=None):
+    """Generic helper to stitch CSVs from a folder into a time-series dataframe."""
+    all_data = []
     last_end = None
 
-    timeline_files = sorted(
-        [f for f in glob.glob(os.path.join(timeline_folder, "*.csv"))],
-        key=extract_start_time,
-    )
+    files = sorted(glob.glob(os.path.join(folder, pattern)), key=extract_start_time)
 
-    for f in timeline_files:
+    for f in files:
         start_time = extract_start_time(f)
-        if start_time < cutoff:
+        if cutoff and start_time < cutoff:
             continue
 
         df = pd.read_csv(f)
+        # Identify class columns (everything except frame and timestamp_iso)
+        class_cols = [c for c in df.columns if c not in ["frame", "timestamp_iso"]]
 
         for i in range(len(df)):
             t = start_time + timedelta(seconds=i / fps)
 
-            # Gap handling: if more than 2 seconds between points, break the line
+            # Gap handling: break the line if > 2 seconds
             if last_end and (t - last_end).total_seconds() > 2:
-                all_t.append(last_end + timedelta(milliseconds=100))
-                for l in [all_idle, all_pee, all_poo]:
-                    l.append(None)
+                gap_row = {"timestamp": last_end + timedelta(milliseconds=100)}
+                for c in class_cols:
+                    gap_row[c] = None
+                all_data.append(gap_row)
 
-            all_t.append(t)
-            all_idle.append(df["idle"].iloc[i])
-            all_pee.append(df["peeing"].iloc[i])
-            all_poo.append(df["pooing"].iloc[i])
+            row_data = {"timestamp": t}
+            for c in class_cols:
+                row_data[c] = df[c].iloc[i]
+            all_data.append(row_data)
             last_end = t
 
-    df_beh = pd.DataFrame(
-        {"timestamp": all_t, "idle": all_idle, "peeing": all_pee, "pooing": all_poo}
+    return pd.DataFrame(all_data)
+
+
+# --- 1. ANALYTICS DATA LOGIC ---
+def load_data(fps=10):
+    save_dir = "logging"
+    cutoff = datetime.now() - timedelta(hours=24)
+
+    # 2. Stitch Behavior Timelines (idle, peeing, pooing)
+    # Looking for the original behavior csv files
+    beh_folder = os.path.join(save_dir, "detection_timelines")
+    # We exclude filenames that have '_detection' in them to avoid mixing
+    df_beh = load_stitched_timeline(beh_folder, "event_*[0-9].csv", fps, cutoff)
+
+    # 3. Stitch Detection Timelines (Kiti, Alejandro, etc.)
+    det_timeline_folder = os.path.join(
+        save_dir, "behavioral_timelines"
+    )  # or your specific folder
+    df_det = load_stitched_timeline(
+        det_timeline_folder, "event_*[0-9].csv", fps, cutoff
     )
 
-    return df_det, df_beh
+    return df_beh, df_det
 
 
 def build_figure(df_det, df_beh):
@@ -93,9 +95,9 @@ def build_figure(df_det, df_beh):
         "Kiti": "red",
         "Alejandro": "blue",
         "Elsa": "green",
-        "idle": "#d3d3d3", 
-        "peeing": "#9b59b6", 
-        "pooing": "#e67e22"
+        "idle": "#d3d3d3",
+        "peeing": "#9b59b6",
+        "pooing": "#e67e22",
     }
     fig = make_subplots(
         rows=2,
@@ -105,26 +107,21 @@ def build_figure(df_det, df_beh):
         subplot_titles=("Detection Confidence", "Behavior Confidence"),
     )
 
-    for cls in df_det["class"].unique():
-        cdf = df_det[df_det["class"] == cls]
-        fig.add_trace(
-            go.Scatter(
-                x=cdf["timestamp"],
-                y=cdf["count"] * cdf["avg_confidence"],
-                mode="markers",
-                name=cls,
-                marker=dict(color=color_map.get(cls, "gray")),
-            ),
-            row=1,
-            col=1,
-        )
-
-    fig.update_yaxes(
-        title_text="Total Confidence",
-        range=[10, None],  # detection scale
-        row=1,
-        col=1,
-    )
+    if not df_det.empty:
+        classes = [c for c in df_det.columns if c != "timestamp"]
+        for cls in classes:
+            fig.add_trace(
+                go.Scatter(
+                    x=df_det["timestamp"],
+                    y=df_det[cls],
+                    mode="lines",
+                    name=f"See: {cls}",
+                    line=dict(color=color_map.get(cls, "gray"), width=1.5),
+                    fill="tozeroy",
+                ),
+                row=2,
+                col=1,
+            )
 
     # --- Subplot 2: Behavior Timelines ---
     if not df_beh.empty:
@@ -157,22 +154,19 @@ def build_figure(df_det, df_beh):
             col=1,
         )
 
-    # Styling the 24-hour timeline
+    # Global Styling
+    now = datetime.now()
     fig.update_layout(
-        height=800,
+        height=900,
         template="plotly_white",
         hovermode="x unified",
         margin=dict(l=50, r=20, t=80, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
 
-    # Set the X-Axis range to exactly the last 24 hours
-    now = datetime.now()
-    past_24 = now - timedelta(hours=24)
-    fig.update_xaxes(range=[past_24, now], type="date")
-
-    fig.update_yaxes(title_text="Detection Score", row=1, col=1)
-    fig.update_yaxes(title_text="Probability", range=[0, 1.05], row=2, col=1)
+    fig.update_xaxes(range=[now - timedelta(hours=24), now], type="date")
+    fig.update_yaxes(title_text="Detection Probability", range=[0, 1.05], row=2, col=1)
+    fig.update_yaxes(title_text="Behavior Probability", range=[0, 1.05], row=3, col=1)
 
     return fig
 
@@ -281,7 +275,7 @@ def main(source, res, port, model, idle_seconds):
     )
 
     behavior_worker = BehaviorWorker_x3d(
-        model = "squatting_video_model",
+        model="squatting_video_model",
         detection_queue=detection_queue,
         behavior_queue=behavior_queue,
         busy_event=busy_event,
