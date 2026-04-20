@@ -299,6 +299,22 @@ class BehaviorWorker_x3d(BaseWorker):
         self._image_size = 160
         self._clip_length = 30
 
+    def save_timeline(self, video_name, full_probs, timestamp_iso):
+        """Saves detailed frame-by-frame probabilities to a CSV."""
+        timeline_dir = os.path.join("logging", "timelines")
+        os.makedirs(timeline_dir, exist_ok=True)
+
+        # Clean filename for the timeline
+        base_name = os.path.splitext(video_name)[0]
+        csv_path = os.path.join(timeline_dir, f"{base_name}_timeline.csv")
+
+        df = pd.DataFrame(full_probs, columns=["idle", "peeing", "pooing"])
+        df.insert(0, "frame", range(len(df)))
+        df.insert(0, "timestamp_iso", timestamp_iso)
+
+        df.to_csv(csv_path, index=False)
+        self.logger.debug(f"Timeline saved to {csv_path}")
+
     @property
     def model(self) -> str:
         return self._model
@@ -463,6 +479,8 @@ class BehaviorWorker_x3d(BaseWorker):
         temp_results = np.column_stack([np.arange(len(full_probs)), full_probs])
         full_probs = self.smooth_probs(temp_results)[:, 1:]
 
+        self.save_timeline(video_path, full_probs, timestamp_iso)
+
         # 3. Compute areas (Total Confidence for the UI)
         areas = np.sum(full_probs, axis=0)
 
@@ -486,8 +504,8 @@ class BehaviorWorker_x3d(BaseWorker):
             self.logger.info("No dominant behavior detected.")
             return
 
-        # Save to pee_log.csv so main.py Plotly graphs pick it up automatically
-        self.append_log("pee_log.csv", rows)
+        # Save to video_log.csv so main.py Plotly graphs pick it up automatically
+        self.append_log("video_log.csv", rows)
         self.logger.info(f"Finished processing behavior event: {event_dir}")
 
 
