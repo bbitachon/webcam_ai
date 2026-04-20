@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import click
 
 # Import your BehaviorWorker class
-from webcam_ai.behavioral_worker import BehaviorWorker
+from webcam_ai.behavioral_worker import BehaviorWorker, BehaviorWorker_x3d
 
 
 @click.group()
@@ -90,9 +90,8 @@ def run_behavior_on_events(events, squat_path, pee_path):
     last_active = {"time": datetime.now() - timedelta(days=365)}
 
     # Initialize the Behavior Worker
-    worker = BehaviorWorker(
-        squat_model=squat_path,
-        pee_model=pee_path,
+    worker = BehaviorWorker_x3d(
+        model=pee_path,
         detection_queue=detection_queue,
         behavior_queue=behavior_queue,
         busy_event=busy_event,

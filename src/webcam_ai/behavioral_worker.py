@@ -7,6 +7,9 @@ import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 
+import cv2
+import ncnn
+import numpy as np
 import pandas as pd
 from ultralytics import YOLO
 
@@ -269,6 +272,221 @@ class BehaviorWorker(BaseWorker):
                 }
             )
 
+        self.append_log("pee_log.csv", rows)
+        self.logger.info(f"Finished processing behavior event: {event_dir}")
+
+
+class BehaviorWorker_x3d(BaseWorker):
+    def __init__(
+        self,
+        model: str,
+        detection_queue: queue.Queue,
+        behavior_queue: queue.Queue,
+        busy_event: threading.Event,
+        stop_event: threading.Event,
+        last_active_time,
+        idle_seconds: int,
+    ):
+        super().__init__(
+            detection_queue=detection_queue,
+            behavior_queue=behavior_queue,
+            busy_event=busy_event,
+            stop_event=stop_event,
+            last_active_time=last_active_time,
+            idle_seconds=idle_seconds,
+        )
+        self.model = model
+        self._image_size = 160
+        self._clip_length = 30
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @model.setter
+    def model(self, model_path: str):
+
+        self._init_ncnn_model(model_path)
+
+        self.labels = {0: "idle", 1: "peeing", 2: "pooing"}
+        self._mean = np.array([0.45, 0.45, 0.45], dtype=np.float32)
+        self._std = np.array([0.225, 0.225, 0.225], dtype=np.float32)
+
+    def _init_ncnn_model(self, model_path: str):
+        if not os.path.isdir(model_path):
+            self.logger.error(f"Provided path is not a directory: {model_path}")
+            sys.exit(0)
+
+        # Search for .bin and .param files in the directory
+        bin_files = [f for f in os.listdir(model_path) if f.endswith(".bin")]
+        param_files = [f for f in os.listdir(model_path) if f.endswith(".param")]
+
+        if not bin_files or not param_files:
+            self.logger.error(f"No .bin or .param files found in {model_path}")
+            sys.exit(0)
+
+        # Match the first bin file found
+        # (Assuming the bin and param share the same base name)
+        bin_path = os.path.join(model_path, bin_files[0])
+        param_name = bin_files[0].replace(".bin", ".param")
+        param_path = os.path.join(model_path, param_name)
+
+        if not os.path.exists(param_path):
+            self.logger.error(f"Found {bin_files[0]} but no matching {param_name}")
+            sys.exit(0)
+
+        # Initialize NCNN
+        self.net = ncnn.Net()
+
+        self.net.load_param(param_path)
+        self.net.load_model(bin_path)
+
+        self._model = bin_path  # Store the bin path for reference
+        self.logger.info(f"Successfully loaded NCNN model from: {model_path}")
+
+    def preprocess_frame(self, frame):
+        """Resizes, converts to RGB, and normalizes a single frame."""
+        frame = cv2.resize(frame, (self._image_size, self._image_size))
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = frame.astype(np.float32) / 255.0
+        frame = (frame - self._mean) / self._std
+        return frame
+
+    def interpolate_probs(self, results, total_frames):
+        """Interpolates sparse clip probabilities over the full frame timeline."""
+        frame_idxs = results[:, 0]
+        probs = results[:, 1:]
+
+        full_probs = np.zeros((total_frames, probs.shape[1]))
+
+        for i in range(probs.shape[1]):
+            full_probs[:, i] = np.interp(
+                np.arange(total_frames), frame_idxs, probs[:, i]
+            )
+
+        return full_probs
+
+    def smooth_probs(self, results, k=3):
+        """Applies a moving average to smooth probabilities."""
+        smoothed = results.copy()
+        for i in range(len(results)):
+            start = max(0, i - k)
+            end = min(len(results), i + k + 1)
+            smoothed[i, 1:] = np.mean(results[start:end, 1:], axis=0)
+        return smoothed
+
+    def run_inference(self, video_path: str, stride: int = 2, batch_size: int = 8):
+        """
+        Extracts sliding window clips from the video and runs NCNN inference.
+        """
+        cap = cv2.VideoCapture(video_path)
+        all_frames = []
+
+        # 1. Load and preprocess all frames
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            all_frames.append(self.preprocess_frame(frame))
+        cap.release()
+
+        total_frames = len(all_frames)
+        if total_frames < self._clip_length:
+            return np.array([]), total_frames
+
+        # 2. Prepare sliding windows
+        windows = []
+        mid_frames = []
+
+        for start_idx in range(0, total_frames - self._clip_length + 1, stride):
+            window = all_frames[start_idx : start_idx + self._clip_length]
+            windows.append(window)
+            mid_frames.append(start_idx + (self._clip_length // 2))
+
+        results = []
+
+        # 3. Process Windows (Clip Batching logic, executed sequentially for NCNN)
+        for i in range(0, len(windows), batch_size):
+            batch_windows = windows[i : i + batch_size]
+            batch_mids = mid_frames[i : i + batch_size]
+
+            for j, window in enumerate(batch_windows):
+                # Convert to numpy array: shape (T, H, W, C)
+                input_np = np.array(window)
+
+                # Transpose to PNNX/NCNN format: (C, T, H, W)
+                input_np = np.transpose(input_np, (3, 0, 1, 2))
+                input_np = np.ascontiguousarray(input_np)
+
+                # Create NCNN Mat
+                mat = ncnn.Mat(input_np)
+
+                # Run Extractor
+                ex = self.net.create_extractor()
+                ex.input("in0", mat)  # "in0" is standard PNNX input name
+                _, out = ex.extract("out0")  # "out0" is standard PNNX output name
+
+                probs = np.array(out)
+                results.append([batch_mids[j]] + probs.tolist())
+
+        return np.array(results), total_frames
+
+    def process_event(self, event_dir, timestamp, timestamp_iso):
+        """Processes the video event using the X3D sliding window pipeline."""
+        self.logger.info(f"Processing behavior event: {event_dir}")
+
+        # Locate the video file inside the event_dir (if it's a directory)
+        video_path = event_dir
+        if os.path.isdir(event_dir):
+            video_files = [
+                f
+                for f in os.listdir(event_dir)
+                if f.lower().endswith((".mp4", ".avi", ".mov", ".mkv"))
+            ]
+            if not video_files:
+                self.logger.warning(f"No video file found in {event_dir}")
+                return
+            video_path = os.path.join(event_dir, video_files[0])
+
+        probs_over_time, total_frames = self.run_inference(
+            video_path, stride=2, batch_size=8
+        )
+
+        if total_frames == 0 or len(probs_over_time) == 0:
+            self.logger.info("Video too short or empty - skipping behavior analysis")
+            return
+
+        # 1. Interpolate to full frame resolution
+        full_probs = self.interpolate_probs(probs_over_time, total_frames)
+
+        # 2. Smooth probabilities
+        temp_results = np.column_stack([np.arange(len(full_probs)), full_probs])
+        full_probs = self.smooth_probs(temp_results)[:, 1:]
+
+        # 3. Compute areas (Total Confidence for the UI)
+        areas = np.sum(full_probs, axis=0)
+
+        # Build rows for the CSV that matches the old YOLO format so UI works perfectly
+        rows = []
+        for class_idx, class_name in self.labels.items():
+            area_score = round(float(areas[class_idx]), 2)
+
+            # Only log if the area score is meaningful (filters out static noise)
+            if area_score > 1.0:
+                rows.append(
+                    {
+                        "timestamp iso": timestamp_iso,
+                        "timestamp": timestamp,
+                        "class": class_name,
+                        "total_confidence": area_score,
+                    }
+                )
+
+        if not rows:
+            self.logger.info("No dominant behavior detected.")
+            return
+
+        # Save to pee_log.csv so main.py Plotly graphs pick it up automatically
         self.append_log("pee_log.csv", rows)
         self.logger.info(f"Finished processing behavior event: {event_dir}")
 
