@@ -46,7 +46,7 @@ def get_event_files(directory="logging"):
 )
 def last(n, model):
     """Process the last N events."""
-    events = get_event_files()[:n]
+    events = get_event_files()[-n:]
     if not events:
         click.echo("No events found.")
         return
