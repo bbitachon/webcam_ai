@@ -1,3 +1,4 @@
+import glob
 import logging
 import os
 import queue
@@ -12,7 +13,7 @@ from nicegui import app, ui
 from plotly.subplots import make_subplots
 
 # Import your class from your other file
-from webcam_ai.behavioral_worker import BehaviorWorker
+from webcam_ai.behavioral_worker import BehaviorWorker_x3d
 from webcam_ai.camera_service import Camera, CameraWorker, RecorderWorker, StreamState
 from webcam_ai.detection_worker import YOLOWorker
 from webcam_ai.motion_trigger import MotionTrigger
@@ -20,30 +21,70 @@ from webcam_ai.motion_trigger import MotionTrigger
 state = StreamState()
 
 
+def extract_start_time(filename):
+    """Extracts datetime from 'event_YYYY-MM-DD_HHMMSS_timeline.csv'"""
+    try:
+        # Get the 'YYYY-MM-DD_HHMMSS' part
+        parts = os.path.basename(filename).split("_")
+        date_str = f"{parts[1]}_{parts[2]}"
+        return datetime.strptime(date_str, "%Y-%m-%d_%H%M%S")
+    except Exception:
+        return datetime.min
+
+
 # --- 1. ANALYTICS DATA LOGIC ---
-def load_data():
+def load_data(fps=10):
     save_dir = "logging"
     det_path = os.path.join(save_dir, "detection_log.csv")
-    beh_path = os.path.join(save_dir, "pee_log.csv")
+    timeline_folder = os.path.join(save_dir, "timelines")
 
-    # Defaults if files don't exist
+    cutoff = datetime.now() - timedelta(hours=24)
+
+    # 1. Load Detection Data
     df_det = pd.DataFrame(columns=["timestamp", "class", "count", "avg_confidence"])
-    df_beh = pd.DataFrame(columns=["timestamp", "class", "total_confidence"])
-
     if os.path.exists(det_path):
         df_det = pd.read_csv(det_path)
         df_det["timestamp"] = pd.to_datetime(
             df_det["timestamp"], format="%Y-%m-%d_%H%M%S"
         )
+        df_det = df_det[df_det["timestamp"] >= cutoff]
 
-    if os.path.exists(beh_path):
-        df_beh = pd.read_csv(beh_path)
-        df_beh["timestamp"] = pd.to_datetime(
-            df_beh["timestamp"], format="%Y-%m-%d_%H%M%S"
-        )
+    # 2. Process and Stitch Timelines
+    all_t, all_idle, all_pee, all_poo = [], [], [], []
+    last_end = None
 
-    cutoff = datetime.now() - timedelta(hours=24)
-    return df_det[df_det["timestamp"] >= cutoff], df_beh[df_beh["timestamp"] >= cutoff]
+    timeline_files = sorted(
+        [f for f in glob.glob(os.path.join(timeline_folder, "*.csv"))],
+        key=extract_start_time,
+    )
+
+    for f in timeline_files:
+        start_time = extract_start_time(f)
+        if start_time < cutoff:
+            continue
+
+        df = pd.read_csv(f)
+
+        for i in range(len(df)):
+            t = start_time + timedelta(seconds=i / fps)
+
+            # Gap handling: if more than 2 seconds between points, break the line
+            if last_end and (t - last_end).total_seconds() > 2:
+                all_t.append(last_end + timedelta(milliseconds=100))
+                for l in [all_idle, all_pee, all_poo]:
+                    l.append(None)
+
+            all_t.append(t)
+            all_idle.append(df["idle"].iloc[i])
+            all_pee.append(df["peeing"].iloc[i])
+            all_poo.append(df["pooing"].iloc[i])
+            last_end = t
+
+    df_beh = pd.DataFrame(
+        {"timestamp": all_t, "idle": all_idle, "peeing": all_pee, "pooing": all_poo}
+    )
+
+    return df_det, df_beh
 
 
 def build_figure(df_det, df_beh):
@@ -83,21 +124,36 @@ def build_figure(df_det, df_beh):
         col=1,
     )
 
-    for cls in df_beh["class"].unique():
-        bdf = df_beh[df_beh["class"] == cls]
+    # --- BOTTOM: Behavior Timelines ---
+    if not df_beh.empty:
+        # Plot behaviors (Pee/Poo) as solid lines
+        for cls in ["peeing", "pooing"]:
+            fig.add_trace(
+                go.Scatter(
+                    x=df_beh["timestamp"],
+                    y=df_beh[cls],
+                    name=cls,
+                    mode="lines",
+                    line=dict(color=color_map[cls], width=2),
+                    fill="tozeroy",  # Highlights the "Area" we log in summary files
+                ),
+                row=2,
+                col=1,
+            )
+
+        # Plot idle as a dashed background line
         fig.add_trace(
             go.Scatter(
-                x=bdf["timestamp"],
-                y=bdf["total_confidence"],
-                mode="markers",
-                name=cls,
-                marker=dict(color=color_map.get(cls, "gray")),
+                x=df_beh["timestamp"],
+                y=df_beh["idle"],
+                name="idle",
+                mode="lines",
+                line=dict(color=color_map["idle"], dash="dash", width=1),
+                opacity=0.4,
             ),
             row=2,
             col=1,
         )
-
-    fig.update_yaxes(title_text="Total Confidence", row=2, col=1)
 
     fig.update_layout(
         height=700,
@@ -220,9 +276,8 @@ def main(source, res, port, model, idle_seconds):
         idle_seconds=idle_seconds,
     )
 
-    behavior_worker = BehaviorWorker(
-        squat_model="squatting_model/weights/best_ncnn_model",
-        pee_model="peeing_model/weights/best_ncnn_model",
+    behavior_worker = BehaviorWorker_x3d(
+        model == "squatting_video_model",
         detection_queue=detection_queue,
         behavior_queue=behavior_queue,
         busy_event=busy_event,
