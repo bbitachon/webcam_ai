@@ -22,10 +22,11 @@ state = StreamState()
 
 
 def extract_start_time(filename):
-    """Extracts datetime from 'event_YYYY-MM-DD_HHMMSS_timeline.csv'"""
+    """Extracts datetime from 'event_YYYY-MM-DD_HHMMSS.csv'"""
     try:
         # Get the 'YYYY-MM-DD_HHMMSS' part
-        parts = os.path.basename(filename).split("_")
+        base = os.path.splitext(filename)[0]
+        parts = base.split("_")
         date_str = f"{parts[1]}_{parts[2]}"
         return datetime.strptime(date_str, "%Y-%m-%d_%H%M%S")
     except Exception:
@@ -92,8 +93,9 @@ def build_figure(df_det, df_beh):
         "Kiti": "red",
         "Alejandro": "blue",
         "Elsa": "green",
-        "peeing": "purple",
-        "pooing": "orange",
+        "idle": "#d3d3d3", 
+        "peeing": "#9b59b6", 
+        "pooing": "#e67e22"
     }
     fig = make_subplots(
         rows=2,
@@ -279,7 +281,7 @@ def main(source, res, port, model, idle_seconds):
     )
 
     behavior_worker = BehaviorWorker_x3d(
-        model == "squatting_video_model",
+        model = "squatting_video_model",
         detection_queue=detection_queue,
         behavior_queue=behavior_queue,
         busy_event=busy_event,
