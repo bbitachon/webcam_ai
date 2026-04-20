@@ -301,7 +301,7 @@ class BehaviorWorker_x3d(BaseWorker):
 
     def save_timeline(self, video_name, full_probs, timestamp_iso):
         """Saves detailed frame-by-frame probabilities to a CSV."""
-        timeline_dir = os.path.join("logging", "timelines")
+        timeline_dir = os.path.join("logging", "behavior_timelines")
         os.makedirs(timeline_dir, exist_ok=True)
 
         # 1. Extract just the file name (e.g., "video.mp4" instead of "/dir/video.mp4")
