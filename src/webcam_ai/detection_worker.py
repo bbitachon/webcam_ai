@@ -106,7 +106,7 @@ class YOLOWorker(object):
             idle_time = (now - self.last_active_time["time"]).total_seconds()
 
             if idle_time < self.idle_seconds:
-                time.sleep(60 * 10)
+                time.sleep(60 * 5)
                 continue
 
             if self.detection_queue.empty():

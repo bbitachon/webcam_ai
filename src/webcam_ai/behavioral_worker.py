@@ -474,7 +474,7 @@ class BehaviorWorker_x3d(BaseWorker):
             video_path = os.path.join(event_dir, video_files[0])
 
         probs_over_time, total_frames = self.run_inference(
-            video_path, stride=2, batch_size=8
+            video_path, stride=2, batch_size=16
         )
 
         if total_frames == 0 or len(probs_over_time) == 0:
