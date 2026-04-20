@@ -375,7 +375,7 @@ class BehaviorWorker_x3d(BaseWorker):
             smoothed[i, 1:] = np.mean(results[start:end, 1:], axis=0)
         return smoothed
 
-    def run_inference(self, video_path: str, stride: int = 2, batch_size: int = 8):
+    def run_inference(self, video_path: str, stride: int = 2, batch_size: int = 4):
         """
         Extracts sliding window clips from the video and runs NCNN inference.
         """
