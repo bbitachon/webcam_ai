@@ -304,8 +304,12 @@ class BehaviorWorker_x3d(BaseWorker):
         timeline_dir = os.path.join("logging", "timelines")
         os.makedirs(timeline_dir, exist_ok=True)
 
-        # Clean filename for the timeline
-        base_name = os.path.splitext(video_name)[0]
+        # 1. Extract just the file name (e.g., "video.mp4" instead of "/dir/video.mp4")
+        file_only = os.path.basename(video_name)
+
+        # 2. Remove the extension
+        base_name = os.path.splitext(file_only)[0]
+
         csv_path = os.path.join(timeline_dir, f"{base_name}_timeline.csv")
 
         df = pd.DataFrame(full_probs, columns=["idle", "peeing", "pooing"])
