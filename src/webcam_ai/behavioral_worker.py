@@ -4,18 +4,18 @@ import queue
 import sys
 import threading
 import time
+from abc import ABC, abstractmethod
 from datetime import datetime
 
 import pandas as pd
 from ultralytics import YOLO
 
 
-class BehaviorWorker(object):
+class BaseWorker(ABC):
 
+    @abstractmethod
     def __init__(
         self,
-        squat_model: str,
-        pee_model: str,
         detection_queue: queue.Queue,
         behavior_queue: queue.Queue,
         busy_event: threading.Event,
@@ -30,42 +30,8 @@ class BehaviorWorker(object):
 
         self.logger = logging.getLogger()
 
-        self.squat_model = squat_model
-        self.pee_model = pee_model
         self.last_active_time = last_active_time
         self.idle_seconds = idle_seconds
-
-    @property
-    def squat_model(self) -> str:
-        return self._squat_model
-
-    @squat_model.setter
-    def squat_model(self, squat_model: str):
-        if not os.path.exists(squat_model):
-            print(
-                "ERROR: Model path is invalid or model was not found. Make sure the model filename was entered correctly."
-            )
-            sys.exit(0)
-
-        self._implemented_squat_model = YOLO(squat_model, task="detect")
-        self.squat_labels = self._implemented_squat_model.names
-        self._squat_model = squat_model
-
-    @property
-    def pee_model(self) -> str:
-        return self._pee_model
-
-    @pee_model.setter
-    def pee_model(self, pee_model: str):
-        if not os.path.exists(pee_model):
-            print(
-                "ERROR: Model path is invalid or model was not found. Make sure the model filename was entered correctly."
-            )
-            sys.exit(0)
-
-        self._implemented_pee_model = YOLO(pee_model, task="detect")
-        self.pee_labels = self._implemented_pee_model.names
-        self._pee_model = pee_model
 
     def append_log(self, filename, rows):
 
@@ -118,6 +84,68 @@ class BehaviorWorker(object):
 
             self.process_event(event_dir, timestamp, timestamp_iso)
             self.behavior_queue.task_done()
+
+    @abstractmethod
+    def process_event(self, event_dir, timestamp, timestamp_iso):
+        pass
+
+
+class BehaviorWorker(BaseWorker):
+
+    def __init__(
+        self,
+        squat_model: str,
+        pee_model: str,
+        detection_queue: queue.Queue,
+        behavior_queue: queue.Queue,
+        busy_event: threading.Event,
+        stop_event: threading.Event,
+        last_active_time,
+        idle_seconds: int,
+    ):
+        super().__init__(
+            detection_queue=detection_queue,
+            behavior_queue=behavior_queue,
+            busy_event=busy_event,
+            stop_event=stop_event,
+            last_active_time=last_active_time,
+            idle_seconds=idle_seconds,
+        )
+
+        self.squat_model = squat_model
+        self.pee_model = pee_model
+
+    @property
+    def squat_model(self) -> str:
+        return self._squat_model
+
+    @squat_model.setter
+    def squat_model(self, squat_model: str):
+        if not os.path.exists(squat_model):
+            print(
+                "ERROR: Model path is invalid or model was not found. Make sure the model filename was entered correctly."
+            )
+            sys.exit(0)
+
+        self._implemented_squat_model = YOLO(squat_model, task="detect")
+        self.squat_labels = self._implemented_squat_model.names
+        self._squat_model = squat_model
+
+    @property
+    def pee_model(self) -> str:
+        return self._pee_model
+
+    @pee_model.setter
+    def pee_model(self, pee_model: str):
+        if not os.path.exists(pee_model):
+            print(
+                "ERROR: Model path is invalid or model was not found. Make sure the model filename was entered correctly."
+            )
+            sys.exit(0)
+
+        self._implemented_pee_model = YOLO(pee_model, task="detect")
+        self.pee_labels = self._implemented_pee_model.names
+        self._pee_model = pee_model
 
     def process_event(self, event_dir, timestamp, timestamp_iso):
         self.logger.info(f"Processing behavior event: {event_dir}")
