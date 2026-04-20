@@ -124,52 +124,54 @@ def build_figure(df_det, df_beh):
         col=1,
     )
 
-    # --- BOTTOM: Behavior Timelines ---
+    # --- Subplot 2: Behavior Timelines ---
     if not df_beh.empty:
-        # Plot behaviors (Pee/Poo) as solid lines
+        # Pooing/Peeing get fills to look like "events"
         for cls in ["peeing", "pooing"]:
             fig.add_trace(
                 go.Scatter(
                     x=df_beh["timestamp"],
                     y=df_beh[cls],
-                    name=cls,
+                    name=cls.capitalize(),
                     mode="lines",
                     line=dict(color=color_map[cls], width=2),
-                    fill="tozeroy",  # Highlights the "Area" we log in summary files
+                    fill="tozeroy",
                 ),
                 row=2,
                 col=1,
             )
 
-        # Plot idle as a dashed background line
+        # Idle stays as a dashed background line
         fig.add_trace(
             go.Scatter(
                 x=df_beh["timestamp"],
                 y=df_beh["idle"],
-                name="idle",
+                name="Idle",
                 mode="lines",
                 line=dict(color=color_map["idle"], dash="dash", width=1),
-                opacity=0.4,
+                opacity=0.5,
             ),
             row=2,
             col=1,
         )
 
+    # Styling the 24-hour timeline
     fig.update_layout(
-        height=700,
-        title="Cat Detection & Behavior (Last 24 Hours)",
+        height=800,
+        template="plotly_white",
         hovermode="x unified",
-        margin=dict(l=40, r=20, t=60, b=40),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-        ),
+        margin=dict(l=50, r=20, t=80, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
 
-    fig.update_xaxes(dtick=60 * 60 * 1000)
+    # Set the X-Axis range to exactly the last 24 hours
+    now = datetime.now()
+    past_24 = now - timedelta(hours=24)
+    fig.update_xaxes(range=[past_24, now], type="date")
+
+    fig.update_yaxes(title_text="Detection Score", row=1, col=1)
+    fig.update_yaxes(title_text="Probability", range=[0, 1.05], row=2, col=1)
+
     return fig
 
 
