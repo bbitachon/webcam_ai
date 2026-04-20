@@ -310,7 +310,7 @@ class BehaviorWorker_x3d(BaseWorker):
         # 2. Remove the extension
         base_name = os.path.splitext(file_only)[0]
 
-        csv_path = os.path.join(timeline_dir, f"{base_name}_timeline.csv")
+        csv_path = os.path.join(timeline_dir, f"{base_name}.csv")
 
         df = pd.DataFrame(full_probs, columns=["idle", "peeing", "pooing"])
         df.insert(0, "frame", range(len(df)))
