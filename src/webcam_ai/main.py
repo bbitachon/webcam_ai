@@ -91,7 +91,7 @@ def load_data():
 
     # Detections (Kiti, Alejandro, Elsa)
     df_det = load_stitched_timeline(
-        os.path.join(save_dir, "detection_timelines"), cutoff=cutoff, window=5
+        os.path.join(save_dir, "detection_timelines"), cutoff=cutoff, window=11
     )
 
     # Behaviors (idle, peeing, pooing)
@@ -148,7 +148,7 @@ def build_figure(df_det, df_beh):
                     mode="lines",
                     connectgaps=False,
                     line=dict(color=color_map[cls], width=2),
-                    fill="tozeroy",
+                    # fill="tozeroy",
                 ),
                 row=2,
                 col=1,
@@ -177,7 +177,7 @@ def build_figure(df_det, df_beh):
         hovermode="x unified",
         margin=dict(l=50, r=20, t=80, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        xaxis=dict(rangeslider=dict(visible=True), type="date"),
+        # xaxis2=dict(rangeslider=dict(visible=True), type="date"),
     )
 
     fig.update_xaxes(range=[now - timedelta(hours=24), now], type="date")
