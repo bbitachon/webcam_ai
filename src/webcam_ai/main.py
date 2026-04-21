@@ -1,4 +1,3 @@
-import numpy as np
 import logging
 import os
 import queue
@@ -6,6 +5,7 @@ import threading
 from datetime import datetime, timedelta
 
 import click
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from fastapi import Response
@@ -32,14 +32,14 @@ def extract_start_time(filename):
     except Exception:
         return datetime.min
 
+
 def load_stitched_timeline(folder, fps=10, cutoff=None, window=1):
     if not os.path.exists(folder):
         return pd.DataFrame()
 
     # Use your working list logic
     csv_files = sorted(
-        [f for f in os.listdir(folder) if f.endswith(".csv")], 
-        key=extract_start_time
+        [f for f in os.listdir(folder) if f.endswith(".csv")], key=extract_start_time
     )
 
     all_rows = []
@@ -47,7 +47,7 @@ def load_stitched_timeline(folder, fps=10, cutoff=None, window=1):
 
     for f in csv_files:
         start_time = extract_start_time(f)
-        
+
         # Only process if it's within the last 24 hours
         if cutoff and start_time < cutoff:
             continue
@@ -61,7 +61,9 @@ def load_stitched_timeline(folder, fps=10, cutoff=None, window=1):
         cols = [c for c in df.columns if c not in ["frame", "timestamp_iso"]]
 
         if window > 1:
-            df[cols] = df[cols].rolling(window=window, min_periods=1, center=True).mean()
+            df[cols] = (
+                df[cols].rolling(window=window, min_periods=1, center=True).mean()
+            )
 
         for i in range(len(df)):
             t = start_time + timedelta(seconds=i / fps)
@@ -70,7 +72,7 @@ def load_stitched_timeline(folder, fps=10, cutoff=None, window=1):
             if last_end and (t - last_end).total_seconds() > 1:
                 gap_row = {"timestamp": last_end + timedelta(milliseconds=100)}
                 for c in cols:
-                    gap_row[c] = None # None breaks the line in Plotly
+                    gap_row[c] = None  # None breaks the line in Plotly
                 all_rows.append(gap_row)
 
             new_row = {"timestamp": t}
@@ -88,10 +90,14 @@ def load_data():
     cutoff = datetime.now() - timedelta(hours=24)
 
     # Detections (Kiti, Alejandro, Elsa)
-    df_det = load_stitched_timeline(os.path.join(save_dir, "detection_timelines"), cutoff=cutoff, window=5)
-    
+    df_det = load_stitched_timeline(
+        os.path.join(save_dir, "detection_timelines"), cutoff=cutoff, window=5
+    )
+
     # Behaviors (idle, peeing, pooing)
-    df_beh = load_stitched_timeline(os.path.join(save_dir, "behavior_timelines"), cutoff=cutoff)
+    df_beh = load_stitched_timeline(
+        os.path.join(save_dir, "behavior_timelines"), cutoff=cutoff
+    )
 
     return df_det, df_beh
 
@@ -171,6 +177,7 @@ def build_figure(df_det, df_beh):
         hovermode="x unified",
         margin=dict(l=50, r=20, t=80, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(rangeslider=dict(visible=True), type="date"),
     )
 
     fig.update_xaxes(range=[now - timedelta(hours=24), now], type="date")
