@@ -203,31 +203,30 @@ def start_ui(source, res, port, stop_event: threading.Event):
             video_image = ui.interactive_image("/video/stream").classes(
                 "w-full max-w-2xl border-2"
             )
-
             ui.timer(0.1, callback=video_image.force_reload)
 
             ui.label("Activity in the last 24 hours").classes("text-h5 mt-6")
 
-            # Load data and build figure
             df_det, df_beh = load_data()
             fig = build_figure(df_det, df_beh)
             plotly_figure = ui.plotly(fig).classes("w-full max-w-3xl")
 
         async def refresh_data():
             try:
-                if not ui.context.client.connected:
-                    return
-                if plotly_figure.client is None:
-                    return
-
                 df_det, df_beh = load_data()
                 new_fig = build_figure(df_det, df_beh)
                 plotly_figure.update_figure(new_fig)
-
             except Exception as e:
                 logging.debug(f"UI update skipped: {e}")
 
-        ui.timer(1800, callback=refresh_data)  # Refresh every 60 seconds
+        # ✅ active=False + app.storage or ui.context keeps it tied to this client session
+        refresh_timer = ui.timer(1800, callback=refresh_data)
+
+        # ✅ Cancel the timer when this client disconnects
+        async def on_disconnect():
+            refresh_timer.cancel()
+
+        app.on_disconnect(on_disconnect)
 
     # Cleanup when NiceGUI closes
     app.on_shutdown(lambda: stop_event.set())
