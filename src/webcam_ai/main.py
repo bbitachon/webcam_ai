@@ -227,7 +227,7 @@ def start_ui(source, res, port, stop_event: threading.Event):
             refresh_timer.cancel()
             video_timer.cancel()
 
-        ui.context.client.on_disconnect(on_disconnect)
+        app.on_disconnect(on_disconnect)
 
     # Cleanup when NiceGUI closes
     app.on_shutdown(lambda: stop_event.set())
